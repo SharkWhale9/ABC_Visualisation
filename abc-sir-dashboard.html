@@ -616,7 +616,7 @@
 
     .comparison-metrics {
       display: grid;
-      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      grid-template-columns: repeat(7, minmax(140px, 1fr));
       gap: 14px;
       margin-bottom: 18px;
     }
@@ -1074,6 +1074,7 @@
 
     .summary-callout { border-left: 4px solid var(--accent); }
     .summary-callout.poor { border-left-color: var(--gold); background: var(--gold-soft); }
+    .r0-callout { grid-column: 1 / -1; }
 
     details { overflow: clip; background: #f8fafb; }
     details[open] { box-shadow: 0 5px 16px rgba(20, 45, 62, 0.045); }
@@ -1463,6 +1464,18 @@
           <strong id="comparison-footprint" class="metric-value compact">—</strong>
           <span class="metric-subvalue">rejection · MCMC, as % of prior area</span>
         </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Rejection R0</span>
+          <strong id="comparison-rejection-r0" class="metric-value compact">—</strong>
+          <span id="comparison-rejection-r0-credible-interval" class="metric-subvalue">median · 90% credible interval</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">MCMC R0</span>
+          <strong id="comparison-mcmc-r0" class="metric-value compact">—</strong>
+          <span id="comparison-mcmc-r0-credible-interval" class="metric-subvalue">median · 90% credible interval</span>
+        </article>
       </div>
 
       <article class="abc-plot-card">
@@ -1484,6 +1497,11 @@
         <aside id="summary-callout" class="summary-callout">
           <h3 id="summary-callout-title">Summary-statistic effect</h3>
           <p id="summary-callout-copy">The rich and poor summaries will be interpreted using the completed chain's settings.</p>
+        </aside>
+
+        <aside id="r0-callout" class="summary-callout r0-callout">
+          <h3 id="r0-callout-title">R0 identification</h3>
+          <p id="r0-callout-copy">R0 credible intervals will appear after both methods finish.</p>
         </aside>
       </div>
     </section>
@@ -2022,7 +2040,9 @@ const MCMC_CONFIG = Object.freeze({
 const COMPARISON_CONFIG = Object.freeze({
   maxScatterPoints: 1800,
   centralLowerQuantile: 0.10,
-  centralUpperQuantile: 0.90
+  centralUpperQuantile: 0.90,
+  credibleIntervalLowerQuantile: 0.05,
+  credibleIntervalUpperQuantile: 0.95
 });
 
 const OBSERVED_SUMMARY = Object.freeze(summarizeEpidemic(OBSERVED_EPIDEMIC));
@@ -3056,10 +3076,19 @@ function parameterSampleSummary(betaValues, gammaValues) {
 
   const meanBeta = betaTotal / count;
   const meanGamma = gammaTotal / count;
+  // These 10th/90th-percentile bounds remain the central-80% rectangle used by
+  // the existing footprint metric. Separate 5th/95th bounds below support
+  // like-for-like 90% credible interval comparisons with R0.
   const betaLow = comparisonQuantile(betaValues, COMPARISON_CONFIG.centralLowerQuantile);
   const betaHigh = comparisonQuantile(betaValues, COMPARISON_CONFIG.centralUpperQuantile);
   const gammaLow = comparisonQuantile(gammaValues, COMPARISON_CONFIG.centralLowerQuantile);
   const gammaHigh = comparisonQuantile(gammaValues, COMPARISON_CONFIG.centralUpperQuantile);
+  const betaCredibleIntervalLow = comparisonQuantile(betaValues, COMPARISON_CONFIG.credibleIntervalLowerQuantile);
+  const betaCredibleIntervalHigh = comparisonQuantile(betaValues, COMPARISON_CONFIG.credibleIntervalUpperQuantile);
+  const gammaCredibleIntervalLow = comparisonQuantile(gammaValues, COMPARISON_CONFIG.credibleIntervalLowerQuantile);
+  const gammaCredibleIntervalHigh = comparisonQuantile(gammaValues, COMPARISON_CONFIG.credibleIntervalUpperQuantile);
+  const betaCredibleIntervalWidth = Math.max(0, betaCredibleIntervalHigh - betaCredibleIntervalLow);
+  const gammaCredibleIntervalWidth = Math.max(0, gammaCredibleIntervalHigh - gammaCredibleIntervalLow);
   const centralArea = Math.max(0, betaHigh - betaLow) * Math.max(0, gammaHigh - gammaLow);
   const priorArea = betaWidth * gammaWidth;
 
@@ -3071,6 +3100,14 @@ function parameterSampleSummary(betaValues, gammaValues) {
     betaHigh,
     gammaLow,
     gammaHigh,
+    betaCredibleIntervalLow,
+    betaCredibleIntervalHigh,
+    gammaCredibleIntervalLow,
+    gammaCredibleIntervalHigh,
+    betaCredibleIntervalWidth,
+    gammaCredibleIntervalWidth,
+    betaCredibleIntervalWidthFraction: betaCredibleIntervalWidth / betaWidth,
+    gammaCredibleIntervalWidthFraction: gammaCredibleIntervalWidth / gammaWidth,
     centralArea,
     centralAreaFraction: centralArea / priorArea,
     posteriorMeanError: Math.hypot(
@@ -3078,6 +3115,53 @@ function parameterSampleSummary(betaValues, gammaValues) {
       (meanGamma - OBSERVED_EPIDEMIC.metadata.gamma) / gammaWidth
     ),
     medianPointError: comparisonQuantile(normalizedErrors, 0.5)
+  };
+}
+
+function reproductionNumberSampleSummary(betaValues, gammaValues) {
+  const count = betaValues.length;
+  if (!count || gammaValues.length !== count) return null;
+
+  const r0Values = new Float64Array(count);
+  let r0Total = 0;
+  const minimumValidGamma = Math.max(Number.EPSILON, ABC_CONFIG.prior.gammaMin);
+
+  for (let index = 0; index < count; index += 1) {
+    const beta = betaValues[index];
+    const gamma = gammaValues[index];
+
+    // Valid inference samples have gamma >= 0.02 under the configured prior,
+    // so extreme ratios are not a practical issue and no R0 values are clipped.
+    // A non-finite or below-prior denominator is treated as malformed instead.
+    if (!Number.isFinite(beta) || !Number.isFinite(gamma) || gamma < minimumValidGamma) return null;
+
+    const r0 = beta / gamma;
+    if (!Number.isFinite(r0)) return null;
+    r0Values[index] = r0;
+    r0Total += r0;
+  }
+
+  const credibleIntervalLow = comparisonQuantile(r0Values, COMPARISON_CONFIG.credibleIntervalLowerQuantile);
+  const credibleIntervalHigh = comparisonQuantile(r0Values, COMPARISON_CONFIG.credibleIntervalUpperQuantile);
+  const credibleIntervalWidth = Math.max(0, credibleIntervalHigh - credibleIntervalLow);
+  const priorLow = ABC_CONFIG.prior.betaMin / ABC_CONFIG.prior.gammaMax;
+  const priorHigh = ABC_CONFIG.prior.betaMax / ABC_CONFIG.prior.gammaMin;
+  const priorWidth = priorHigh - priorLow;
+  // This is support-width normalization only: independent uniform priors on
+  // beta and gamma induce a non-uniform prior distribution for their ratio.
+
+  return {
+    count,
+    r0Values,
+    meanR0: r0Total / count,
+    medianR0: comparisonQuantile(r0Values, 0.5),
+    credibleIntervalLow,
+    credibleIntervalHigh,
+    credibleIntervalWidth,
+    credibleIntervalWidthFraction: credibleIntervalWidth / priorWidth,
+    priorLow,
+    priorHigh,
+    trueR0: OBSERVED_EPIDEMIC.metadata.beta / OBSERVED_EPIDEMIC.metadata.gamma
   };
 }
 
@@ -3108,6 +3192,8 @@ function buildComparisonData(cache) {
   );
   const rejectionSimulatorCalls = ABC_CONFIG.proposals;
   const mcmcSimulatorCalls = cache.initializationAttempts + cache.inBoundsSimulations;
+  const rejectionR0Summary = reproductionNumberSampleSummary(rejectionBeta, rejectionGamma);
+  const mcmcR0Summary = reproductionNumberSampleSummary(mcmcBeta, mcmcGamma);
 
   return {
     settings: cache.settings,
@@ -3115,12 +3201,17 @@ function buildComparisonData(cache) {
     rejectionBeta,
     rejectionGamma,
     rejectionDistance,
+    rejectionR0: rejectionR0Summary ? rejectionR0Summary.r0Values : new Float64Array(0),
     mcmcBeta,
     mcmcGamma,
     mcmcDistance,
     mcmcIterations,
+    mcmcR0: mcmcR0Summary ? mcmcR0Summary.r0Values : new Float64Array(0),
     rejectionSummary: parameterSampleSummary(rejectionBeta, rejectionGamma),
     mcmcSummary: parameterSampleSummary(mcmcBeta, mcmcGamma),
+    rejectionR0Summary,
+    mcmcR0Summary,
+    trueR0: OBSERVED_EPIDEMIC.metadata.beta / OBSERVED_EPIDEMIC.metadata.gamma,
     rejectionSimulatorCalls,
     mcmcSimulatorCalls,
     rejectionYieldPerThousand: 1000 * acceptedIndices.length / rejectionSimulatorCalls,
@@ -3160,12 +3251,19 @@ function resetComparisonPanel(message) {
   document.getElementById("comparison-mcmc-rate").textContent = "accepted random-walk moves";
   document.getElementById("comparison-budget").textContent = "—";
   document.getElementById("comparison-footprint").textContent = "—";
+  document.getElementById("comparison-rejection-r0").textContent = "—";
+  document.getElementById("comparison-rejection-r0-credible-interval").textContent = "median · 90% credible interval";
+  document.getElementById("comparison-mcmc-r0").textContent = "—";
+  document.getElementById("comparison-mcmc-r0-credible-interval").textContent = "median · 90% credible interval";
   document.getElementById("comparison-efficiency-copy").textContent = "The comparison will appear after both methods finish.";
   document.getElementById("comparison-target-copy").textContent = "";
   document.getElementById("comparison-tuning-copy").textContent = "";
   document.getElementById("summary-callout").classList.remove("poor");
   document.getElementById("summary-callout-title").textContent = "Summary-statistic effect";
   document.getElementById("summary-callout-copy").textContent = "The rich and poor summaries will be interpreted using the completed chain's settings.";
+  document.getElementById("r0-callout").classList.remove("poor");
+  document.getElementById("r0-callout-title").textContent = "R0 identification";
+  document.getElementById("r0-callout-copy").textContent = "R0 credible intervals will appear after both methods finish.";
   if (typeof Plotly !== "undefined") Plotly.purge("comparison-plot");
 }
 
@@ -3220,6 +3318,22 @@ function updateComparisonText(data, cache) {
   document.getElementById("comparison-footprint").textContent =
     `${Number.isFinite(rejectionFootprint) ? rejectionFootprint.toFixed(1) + "%" : "n/a"} · ${Number.isFinite(mcmcFootprint) ? mcmcFootprint.toFixed(1) + "%" : "n/a"}`;
 
+  const formatR0 = (value) => Number.isFinite(value) ? value.toFixed(2) : "n/a";
+  const updateR0Metric = (method, summary) => {
+    const valueElement = document.getElementById(`comparison-${method}-r0`);
+    const credibleIntervalElement = document.getElementById(`comparison-${method}-r0-credible-interval`);
+    if (!summary) {
+      valueElement.textContent = "n/a";
+      credibleIntervalElement.textContent = "no finite R0 samples";
+      return;
+    }
+    valueElement.textContent = `median ${formatR0(summary.medianR0)}`;
+    credibleIntervalElement.textContent =
+      `90% credible interval [${formatR0(summary.credibleIntervalLow)}, ${formatR0(summary.credibleIntervalHigh)}] · mean ${formatR0(summary.meanR0)}`;
+  };
+  updateR0Metric("rejection", data.rejectionR0Summary);
+  updateR0Metric("mcmc", data.mcmcR0Summary);
+
   document.getElementById("comparison-efficiency-copy").textContent =
     `With matched ${summaryLabel.toLowerCase()} summaries and epsilon = ${data.settings.epsilon.toFixed(3)}, rejection produced ${rejectionCount.toLocaleString()} ABC-compatible draws from ${data.rejectionSimulatorCalls.toLocaleString()} simulations. The random walk produced ${data.acceptedMoves.toLocaleString()} accepted moves from ${data.mcmcSimulatorCalls.toLocaleString()} simulator calls, giving ${ratioText} and concentrating simulation effort inside the compatible region instead of repeatedly drawing across the full prior.`;
   document.getElementById("comparison-target-copy").textContent =
@@ -3238,6 +3352,51 @@ function updateComparisonText(data, cache) {
     document.getElementById("summary-callout-title").textContent = "What changes under the poor summary";
     document.getElementById("summary-callout-copy").textContent =
       `Peak height and peak timing currently help distinguish fast-and-sharp from slow-and-long epidemics. Select Poor: final only and rerun the chain; both clouds should widen into a ridge because one final total cannot separately identify transmission and recovery rates.`;
+  }
+
+  const r0CalloutTitle = document.getElementById("r0-callout-title");
+  const r0CalloutCopy = document.getElementById("r0-callout-copy");
+  const credibleIntervalWidthDescription = (label, parameterSummary, r0Summary) => {
+    if (!parameterSummary || !r0Summary) return `${label}: no finite R0 credible interval is available.`;
+    const r0Percent = 100 * r0Summary.credibleIntervalWidthFraction;
+    const betaPercent = 100 * parameterSummary.betaCredibleIntervalWidthFraction;
+    const gammaPercent = 100 * parameterSummary.gammaCredibleIntervalWidthFraction;
+    return `${label}: R0 [${formatR0(r0Summary.credibleIntervalLow)}, ${formatR0(r0Summary.credibleIntervalHigh)}] has width ${formatR0(r0Summary.credibleIntervalWidth)} (${r0Percent.toFixed(1)}% of the derived R0 prior support [${formatR0(r0Summary.priorLow)}, ${formatR0(r0Summary.priorHigh)}]), versus beta and gamma 90% credible interval widths of ${betaPercent.toFixed(1)}% and ${gammaPercent.toFixed(1)}% of their prior ranges`;
+  };
+  const rejectionWidthDescription = credibleIntervalWidthDescription(
+    "Rejection",
+    data.rejectionSummary,
+    data.rejectionR0Summary
+  );
+  const mcmcWidthDescription = credibleIntervalWidthDescription(
+    "ABC-MCMC",
+    data.mcmcSummary,
+    data.mcmcR0Summary
+  );
+
+  const r0Callout = document.getElementById("r0-callout");
+  const r0TighterForBoth = [
+    [data.rejectionSummary, data.rejectionR0Summary],
+    [data.mcmcSummary, data.mcmcR0Summary]
+  ].every(([parameterSummary, r0Summary]) =>
+    parameterSummary
+    && r0Summary
+    && r0Summary.credibleIntervalWidthFraction < parameterSummary.betaCredibleIntervalWidthFraction
+    && r0Summary.credibleIntervalWidthFraction < parameterSummary.gammaCredibleIntervalWidthFraction
+  );
+
+  if (data.settings.summaryMode === "rich") {
+    r0Callout.classList.remove("poor");
+    r0CalloutTitle.textContent = r0TighterForBoth
+      ? "R0 is identified along the beta-gamma ridge"
+      : "R0 credible intervals along the beta-gamma ridge";
+    r0CalloutCopy.textContent =
+      `The true value is R0 = ${data.trueR0.toFixed(1)}. ${rejectionWidthDescription}; ${mcmcWidthDescription}. ${r0TighterForBoth ? "The smaller range-normalized R0 credible intervals make the ridge interpretation explicit: beta and gamma can trade off while their ratio remains constrained." : "At these settings R0 is not narrower than both marginal rate intervals for both methods, so the reported widths should be interpreted directly rather than as automatic evidence of tighter identification."} The support-width percentages are descriptive: independent uniform priors on beta and gamma induce a non-uniform prior on R0.`;
+  } else {
+    r0Callout.classList.add("poor");
+    r0CalloutTitle.textContent = "R0 identification under the poor summary";
+    r0CalloutCopy.textContent =
+      `The true value is R0 = ${data.trueR0.toFixed(1)}. ${rejectionWidthDescription}; ${mcmcWidthDescription}. Final epidemic size alone is intentionally lossy, so compare these widths with the rich-summary run before treating R0 as well identified. The support-width percentages are descriptive because the induced prior on R0 is not uniform.`;
   }
 
   document.getElementById("comparison-settings-badge").textContent =
@@ -3262,22 +3421,22 @@ function renderComparisonPlot(data, cache) {
     {
       x: rejectionDisplay.map((index) => data.rejectionBeta[index]),
       y: rejectionDisplay.map((index) => data.rejectionGamma[index]),
-      customdata: rejectionDisplay.map((index) => data.rejectionDistance[index]),
+      customdata: rejectionDisplay.map((index) => [data.rejectionDistance[index], data.rejectionR0[index]]),
       mode: "markers",
       marker: { color: "#1f5b78", size: 7, opacity: 0.62 },
       name: `Rejection accepted (${data.rejectionBeta.length.toLocaleString()})`,
       legendgroup: "rejection",
-      hovertemplate: "beta=%{x:.3f}<br>gamma=%{y:.3f}<br>distance=%{customdata:.4f}<extra>Rejection</extra>"
+      hovertemplate: "beta=%{x:.3f}<br>gamma=%{y:.3f}<br>R0=%{customdata[1]:.3f}<br>distance=%{customdata[0]:.4f}<extra>Rejection</extra>"
     },
     {
       x: mcmcDisplay.map((index) => data.mcmcBeta[index]),
       y: mcmcDisplay.map((index) => data.mcmcGamma[index]),
-      customdata: mcmcDisplay.map((index) => [data.mcmcIterations[index], data.mcmcDistance[index]]),
+      customdata: mcmcDisplay.map((index) => [data.mcmcIterations[index], data.mcmcDistance[index], data.mcmcR0[index]]),
       mode: "markers",
       marker: { color: "#247158", size: 6, opacity: 0.30, symbol: "diamond" },
       name: `MCMC retained (${data.mcmcBeta.length.toLocaleString()})`,
       legendgroup: "mcmc",
-      hovertemplate: "Iteration %{customdata[0]}<br>beta=%{x:.3f}<br>gamma=%{y:.3f}<br>distance=%{customdata[1]:.4f}<extra>ABC-MCMC</extra>"
+      hovertemplate: "Iteration %{customdata[0]}<br>beta=%{x:.3f}<br>gamma=%{y:.3f}<br>R0=%{customdata[2]:.3f}<br>distance=%{customdata[1]:.4f}<extra>ABC-MCMC</extra>"
     },
     {
       x: rejectionMean ? [rejectionMean.meanBeta] : [],
@@ -3301,7 +3460,7 @@ function renderComparisonPlot(data, cache) {
       mode: "markers",
       marker: { color: "#b83a3a", size: 17, symbol: "star", line: { color: "#ffffff", width: 1 } },
       name: "True parameter",
-      hovertemplate: "beta true=%{x:.2f}<br>gamma true=%{y:.2f}<extra></extra>"
+      hovertemplate: "beta true=%{x:.2f}<br>gamma true=%{y:.2f}<br>R0 true=4.0<extra></extra>"
     },
     {
       x: data.rejectionBeta,
@@ -3487,7 +3646,16 @@ async function renderComparisonPanel(cache) {
     rejectionMeanBeta: data.rejectionSummary ? data.rejectionSummary.meanBeta : NaN,
     rejectionMeanGamma: data.rejectionSummary ? data.rejectionSummary.meanGamma : NaN,
     mcmcMeanBeta: data.mcmcSummary ? data.mcmcSummary.meanBeta : NaN,
-    mcmcMeanGamma: data.mcmcSummary ? data.mcmcSummary.meanGamma : NaN
+    mcmcMeanGamma: data.mcmcSummary ? data.mcmcSummary.meanGamma : NaN,
+    trueR0: data.trueR0,
+    rejectionMeanR0: data.rejectionR0Summary ? data.rejectionR0Summary.meanR0 : NaN,
+    rejectionMedianR0: data.rejectionR0Summary ? data.rejectionR0Summary.medianR0 : NaN,
+    rejectionR0CredibleIntervalLow: data.rejectionR0Summary ? data.rejectionR0Summary.credibleIntervalLow : NaN,
+    rejectionR0CredibleIntervalHigh: data.rejectionR0Summary ? data.rejectionR0Summary.credibleIntervalHigh : NaN,
+    mcmcMeanR0: data.mcmcR0Summary ? data.mcmcR0Summary.meanR0 : NaN,
+    mcmcMedianR0: data.mcmcR0Summary ? data.mcmcR0Summary.medianR0 : NaN,
+    mcmcR0CredibleIntervalLow: data.mcmcR0Summary ? data.mcmcR0Summary.credibleIntervalLow : NaN,
+    mcmcR0CredibleIntervalHigh: data.mcmcR0Summary ? data.mcmcR0Summary.credibleIntervalHigh : NaN
   });
   console.groupEnd();
 }
@@ -3780,6 +3948,7 @@ function showExecutedCode() {
     "const COMPARISON_CONFIG = " + JSON.stringify(COMPARISON_CONFIG, null, 2) + ";",
     comparisonQuantile,
     parameterSampleSummary,
+    reproductionNumberSampleSummary,
     buildComparisonData,
     evenlySpacedIndices,
     updateComparisonText,
