@@ -1,4 +1,4 @@
-# ABC_Visualisation# ABC / ABC-MCMC SIR Dashboard
+# ABC / ABC-MCMC SIR Dashboard
 
 ## 1. What this is
 
@@ -263,23 +263,47 @@ If the visitor changes the summary, epsilon, or proposal scales after a chain fi
 - Accepted rejection points and post-burn-in MCMC states in `(beta, gamma)` space.
 - The true parameter `(0.4, 0.1)` and each method's sample mean.
 - Separate beta and gamma marginal histograms.
+- Hover text for each displayed joint sample also reports its derived `R0 = beta / gamma`.
 
-The plot displays at most 1,800 evenly spaced points from each sample for browser performance, but the numerical summaries use all accepted rejection draws and all retained MCMC states.
+The plot displays at most 1,800 evenly spaced points from each sample for browser performance, but the numerical summaries use all accepted rejection draws and all retained MCMC states. The R0 extension does not add another histogram, so the existing joint-plus-marginal layout remains unchanged.
 
-**Efficiency metrics**
+**Efficiency and concentration metrics**
 
 - **Rejection yield per 1,000 simulations**: `1000 * accepted rejection proposals / 4000`.
 - **MCMC move yield per 1,000 simulator calls**: `1000 * accepted MCMC moves / (initialization attempts + in-bounds proposal simulations)`.
 - **Simulator budget**: 4,000 for rejection; for MCMC, initialization simulations plus in-bounds transition simulations. Out-of-bounds proposals are not counted because they do not run the SIR simulator.
 - **Central 80% footprint**: the area of the axis-aligned rectangle formed by the marginal 10th-to-90th percentile interval of beta times the marginal 10th-to-90th percentile interval of gamma, divided by the full prior rectangle area.
+- **R0 summaries**: for every accepted rejection point and every post-burn-in MCMC state, the code computes `R0_i = beta_i / gamma_i`. Each method's metric card shows the median in bold, followed by the mean and an equal-tailed 90% credible interval `[5th percentile, 95th percentile]`. The true reference is `R0 = 4.0`.
+
+The R0 callout compares the 90% credible-interval width with the separate beta and gamma 90% interval widths. Beta and gamma widths are divided by their prior-range widths. R0 width is divided by the feasible ratio support implied by the rectangular prior:
+
+```text
+R0 prior support lower bound = beta_min / gamma_max = 0.05 / 0.50 = 0.10
+R0 prior support upper bound = beta_max / gamma_min = 1.00 / 0.02 = 50.00
+```
+
+This is only a support-width comparison. Independent uniform priors on beta and gamma induce a non-uniform prior on their ratio, so the percentage is not a probability statement about a uniform R0 prior.
+
+With the default seed, rich summary, and `epsilon = 0.080`, the reproducible dashboard run gives:
+
+| Method | Mean R0 | Median R0 | 90% credible interval |
+|---|---:|---:|---:|
+| ABC rejection | 3.77 | 3.71 | [3.09, 4.50] |
+| ABC-MCMC | 3.74 | 3.67 | [3.06, 4.67] |
+
+Both intervals include the true value `4.0`. Their support-normalized widths are about 2.8% and 3.2%, while beta and gamma remain much wider relative to their own prior ranges. This quantifies the ridge interpretation: beta and gamma can trade off while their ratio is substantially better constrained by the rich summary.
+
+Under the poor summary in the tested default run, the intervals widen to approximately `[2.26, 18.14]` for rejection and `[2.50, 20.66]` for ABC-MCMC. The callout therefore changes its wording rather than claiming R0 is always well identified.
 
 **What to look at**
 
-ABC-MCMC often produces more accepted moves per simulator call because it proposes locally after reaching the compatible region, whereas rejection sampling continues drawing across the entire prior. Under the poor summary, both methods should admit a much wider, ridge-like set of beta and gamma combinations.
+ABC-MCMC often produces more accepted moves per simulator call because it proposes locally after reaching the compatible region, whereas rejection sampling continues drawing across the entire prior. With the rich summary, inspect the diagonal beta-gamma ridge together with the tighter R0 cards. Under the poor summary, both the joint region and the R0 credible intervals should widen substantially.
 
 **Do not over-interpret**
 
 - Accepted MCMC moves are not independent posterior samples, so move yield is not an effective-sample-size measure.
+- The MCMC R0 credible interval is computed from dependent retained states and can be affected by autocorrelation or incomplete exploration.
+- The reported 90% credible intervals are equal-tailed 5th-to-95th percentile intervals, not highest-posterior-density intervals.
 - The central 80% footprint is not a highest-posterior-density region. It is an axis-aligned marginal rectangle and can misrepresent a diagonal or curved ridge.
 - A narrower MCMC cloud is not automatically evidence of greater accuracy; it may indicate autocorrelation, inadequate mixing, or failure to explore all compatible regions.
 
@@ -306,6 +330,19 @@ The expandable implementation section prints the exact JavaScript functions and 
 - The SIR, PRNG, binomial sampler, RK4 solver, ABC rejection sampler, and ABC-MCMC chain are implemented in vanilla JavaScript.
 - Because Plotly is loaded remotely, the HTML needs network access for charts unless Plotly is vendored locally. Numerical code can still exist in the page, but chart rendering reports a CDN load failure when Plotly is unavailable.
 
+### Repository files
+
+For a minimal repository or personal-site deployment, keep:
+
+- `abc-sir-dashboard-r0-credible-intervals.html`: the current complete dashboard. It can be renamed to `index.html` or another site-specific filename.
+- `README.md`: documentation for the implementation.
+
+The other generated files are optional development artifacts:
+
+- `abc-sir-dashboard-r0-credible-intervals.patch`: an incremental unified diff showing the R0 changes against the previous dashboard. It is useful for code review or history, but the completed HTML does not need it at runtime.
+- `abc-sir-dashboard-r0-test-results.json`: a captured browser-test report. It records the rich/poor R0 card text, credible intervals, numerical summaries, consistency checks, and any runtime or console errors from the validation run. The dashboard does not fetch, import, or read this JSON file, so it is not required in the repository or deployment. Keep it only if you want a regression-test artifact or reproducibility record.
+- Preview screenshots are optional documentation assets and are not used by the application.
+
 ### Caching and performance
 
 - Rejection sampling stores 4,000 parameter pairs, raw summaries, and all 4,000 infected trajectories of length 101.
@@ -313,7 +350,7 @@ The expandable implementation section prints the exact JavaScript functions and 
 - Epsilon changes re-filter the cache; summary changes recompute only distances.
 - ABC-MCMC must be rerun when its summary, epsilon, or proposal scales change because those settings alter the transition history.
 - MCMC plots and status are refreshed every 250 transitions rather than after every transition.
-- The comparison panel is derived from the rejection and MCMC caches and performs no new epidemic simulations.
+- The comparison panel is derived from the rejection and MCMC caches and performs no new epidemic simulations. R0 values and credible intervals are computed directly from those cached beta/gamma samples.
 
 ### Reproducibility
 
@@ -340,6 +377,9 @@ The expandable implementation section prints the exact JavaScript functions and 
 - **Peak timing uses the first maximum.** If `I(t)` has a tied plateau, the earliest day is recorded.
 - **Final size is evaluated at day 100.** If infections remain at day 100, `N - S(T)` includes all infections to date but is not necessarily the eventual post-extinction epidemic size.
 - **The comparison footprint ignores dependence and geometry.** It uses marginal quantiles and an axis-aligned area, not a joint credible region or effective sample size.
+- **R0 credible intervals inherit Monte Carlo limitations.** The rejection interval depends on a finite accepted sample, and the MCMC interval uses autocorrelated retained states without an effective-sample-size correction.
+- **R0 support normalization is descriptive.** The code compares interval width with the feasible support `[0.10, 50.00]`, but the ratio of independent uniform beta and gamma variables is not uniformly distributed on that support.
+- **R0 values are not clipped.** The configured prior enforces `gamma >= 0.02`, which prevents division by zero and keeps ratios finite for valid samples. If a non-finite value or a gamma below the prior lower bound reaches the R0 summarizer, it treats the sample set as malformed and returns no R0 summary rather than silently clipping it.
 
 ## 7. How to extend this
 
@@ -351,4 +391,5 @@ The expandable implementation section prints the exact JavaScript functions and 
 - Compare the ABC approximation with an exact or particle-filter likelihood method for this small SIR model.
 - Infer additional parameters or initial conditions, or replace SIR with SEIR or another simulator.
 - Add posterior predictive checks based on fresh simulations from retained parameter draws.
+- Add an optional R0 marginal density panel, highest-posterior-density intervals, or Monte Carlo uncertainty for interval endpoints.
 - Vendor Plotly locally or bundle the JavaScript for fully offline deployment.
