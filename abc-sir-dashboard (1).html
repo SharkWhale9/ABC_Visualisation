@@ -1,0 +1,4194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Likelihood-free inference with ABC — Interactive SIR dashboard</title>
+  <meta name="theme-color" content="#10283a">
+  <meta name="description" content="An interactive, client-side demonstration of ABC rejection sampling and ABC-MCMC for a stochastic SIR epidemic model.">
+  <style>
+    :root {
+      --ink: #16283b;
+      --muted: #667584;
+      --line: #d8e0e7;
+      --panel: #ffffff;
+      --page: #f4f6f7;
+      --accent: #1f5b78;
+      --accent-soft: #e8f1f5;
+      --success: #247158;
+      --success-soft: #e8f4ef;
+      --warning: #8a5a18;
+      --code: #101c26;
+      --shadow: 0 10px 28px rgba(23, 32, 42, 0.07);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1480px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 44px 0 64px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 750;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 { line-height: 1.18; }
+
+    h1 {
+      margin: 0;
+      max-width: 900px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2rem, 4vw, 3.55rem);
+      font-weight: 600;
+      letter-spacing: -0.03em;
+    }
+
+    .lede {
+      max-width: 900px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 1.04rem;
+    }
+
+    button {
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      padding: 10px 16px;
+      color: #fff;
+      background: var(--accent);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { filter: brightness(0.95); }
+    button:disabled { opacity: 0.55; cursor: progress; }
+
+    .status {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      min-height: 48px;
+      margin: 0 0 22px;
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      color: var(--muted);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--warning);
+      box-shadow: 0 0 0 5px rgba(122, 84, 16, 0.12);
+    }
+
+    .status.complete .status-dot {
+      background: var(--success);
+      box-shadow: 0 0 0 5px rgba(31, 107, 79, 0.12);
+    }
+
+    .scope-note {
+      margin-bottom: 24px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--accent);
+      border-radius: 0 10px 10px 0;
+      background: var(--accent-soft);
+    }
+
+    .scope-note strong { display: block; margin-bottom: 4px; }
+
+    .panel {
+      margin-top: 24px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    h2 { margin: 0; font-size: 1.35rem; }
+    h3 { margin: 0; font-size: 1rem; }
+
+    .panel-head p,
+    .small-note {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
+
+    .scenario-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .scenario-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .scenario-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 15px 0;
+    }
+
+    .parameters {
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.82rem;
+    }
+
+    .chart { width: 100%; height: 405px; }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th, td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+
+    .pass {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 9px;
+      color: var(--success);
+      background: var(--success-soft);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .interpretation {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .interpretation article {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f9fbfc;
+    }
+
+    .interpretation p { margin: 7px 0 0; color: var(--muted); }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f9fbfc;
+    }
+
+    details + details { margin-top: 12px; }
+
+    summary {
+      padding: 13px 15px;
+      cursor: pointer;
+      font-weight: 750;
+    }
+
+    pre {
+      max-height: 620px;
+      margin: 0;
+      overflow: auto;
+      border-radius: 0 0 9px 9px;
+      padding: 18px;
+      color: #e9eef3;
+      background: var(--code);
+      font: 0.82rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      tab-size: 2;
+      white-space: pre;
+    }
+
+    .formula {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .formula div {
+      padding: 13px 15px;
+      border-radius: 9px;
+      background: #f6f8fa;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    .observed-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.8fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .observed-chart {
+      min-height: 470px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .summary-stack {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .summary-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f9fbfc;
+    }
+
+    .summary-card.accent {
+      border-color: rgba(40, 95, 143, 0.32);
+      background: var(--accent-soft);
+    }
+
+    .summary-card h3 { margin-bottom: 10px; }
+
+    .stat-list {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px 14px;
+      margin: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-list dt { color: var(--muted); }
+    .stat-list dd { margin: 0; font-weight: 800; }
+
+    .vector {
+      margin-top: 12px;
+      padding: 11px 12px;
+      border: 1px solid rgba(40, 95, 143, 0.18);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.72);
+      font: 0.9rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .fixed-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: var(--success);
+      background: var(--success-soft);
+      font-size: 0.78rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .fixed-badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .button-secondary {
+      color: var(--accent);
+      background: #fff;
+    }
+
+    .abc-controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      align-items: stretch;
+      margin-bottom: 18px;
+    }
+
+    .takeaway-banner {
+      display: grid;
+      gap: 4px;
+      margin: 0 0 18px;
+      border: 1px solid rgba(31, 91, 120, 0.28);
+      border-left: 4px solid var(--accent);
+      border-radius: 12px;
+      padding: 14px 17px;
+      background: linear-gradient(180deg, rgba(232, 241, 245, 0.85), rgba(232, 241, 245, 0.55));
+      box-shadow: var(--shadow-soft);
+    }
+
+    .takeaway-banner #live-takeaway-text {
+      margin: 0;
+      color: var(--ink);
+      font-size: 0.96rem;
+      line-height: 1.55;
+    }
+
+    .appendix-details {
+      padding: 0;
+      overflow: clip;
+    }
+
+    .appendix-details > summary {
+      list-style: none;
+      padding: clamp(18px, 3vw, 26px);
+      color: var(--ink);
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      font-size: 1.1rem;
+      font-weight: 620;
+      letter-spacing: -0.012em;
+      cursor: pointer;
+    }
+
+    .appendix-details > summary::-webkit-details-marker { display: none; }
+
+    .appendix-details > summary::before {
+      content: "▸";
+      display: inline-block;
+      margin-right: 9px;
+      color: var(--accent);
+      transition: transform 150ms ease;
+    }
+
+    .appendix-details[open] > summary::before { transform: rotate(90deg); }
+
+    .appendix-details[open] > summary {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .appendix-body {
+      display: grid;
+      gap: 26px;
+      padding: 0 clamp(18px, 3vw, 26px) clamp(18px, 3vw, 26px);
+    }
+
+    .appendix-body > section + section {
+      padding-top: 26px;
+      border-top: 1px solid var(--line);
+    }
+
+    .control-card,
+    .metric-card {
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: #f9fbfc;
+    }
+
+    .control-card > label,
+    .control-card > .control-label {
+      display: block;
+      margin-bottom: 9px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.055em;
+      text-transform: uppercase;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+    }
+
+    .segmented label {
+      position: relative;
+      display: block;
+      cursor: pointer;
+    }
+
+    .segmented input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .segmented span {
+      display: block;
+      border-radius: 999px;
+      padding: 8px 10px;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 750;
+    }
+
+    .segmented input:checked + span {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .range-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .epsilon-readout {
+      min-width: 64px;
+      border-radius: 8px;
+      padding: 7px 9px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font: 800 0.9rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-align: center;
+    }
+
+    .metric-card {
+      display: grid;
+      align-content: center;
+      gap: 4px;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      font-size: 1.42rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.15;
+    }
+
+    .metric-subvalue {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .abc-status {
+      margin: 0 0 18px;
+      box-shadow: none;
+    }
+
+    .abc-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .abc-plot-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .abc-plot-head {
+      padding: 14px 16px 0;
+    }
+
+    .abc-plot-head p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .abc-scatter { height: 520px; }
+    .abc-curves { height: 520px; }
+
+    .method-note {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .method-note article {
+      padding: 15px 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f9fbfc;
+    }
+
+    .method-note p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .mono-inline {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+
+    .mcmc-controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      align-items: stretch;
+      margin-bottom: 14px;
+    }
+
+    .mcmc-target-card { grid-column: span 2; }
+
+    .mcmc-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      align-items: center;
+      margin: 0 0 18px;
+    }
+
+    .mcmc-action-row .small-note {
+      margin: 0;
+      flex: 1 1 360px;
+    }
+
+    .mcmc-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+
+    .mcmc-path { height: 560px; }
+    .mcmc-traces { height: 610px; }
+
+    .metric-value.compact {
+      font-size: 1.02rem;
+      line-height: 1.4;
+    }
+
+    .status.stale .status-dot {
+      background: var(--warning);
+      box-shadow: 0 0 0 5px rgba(122, 84, 16, 0.12);
+    }
+
+    .status.running .status-dot {
+      background: var(--accent);
+      box-shadow: 0 0 0 5px rgba(40, 95, 143, 0.13);
+      animation: pulse 1.25s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(0.9); opacity: 0.75; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
+
+    .settings-inline {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 18px;
+      margin: 0;
+    }
+
+    .settings-inline div {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .settings-inline dt { color: var(--muted); }
+    .settings-inline dd { margin: 0; font-weight: 800; }
+
+
+    .comparison-status {
+      margin: 0 0 18px;
+      box-shadow: none;
+    }
+
+    .comparison-metrics {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(140px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .comparison-plot {
+      height: 650px;
+    }
+
+    .comparison-narrative {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .comparison-copy,
+    .summary-callout {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: #f9fbfc;
+    }
+
+    .comparison-copy p,
+    .summary-callout p {
+      margin: 8px 0 0;
+      color: var(--muted);
+    }
+
+    .comparison-copy p:first-of-type { margin-top: 10px; }
+
+    .summary-callout {
+      border-color: rgba(40, 95, 143, 0.28);
+      background: var(--accent-soft);
+    }
+
+    .summary-callout.poor {
+      border-color: rgba(122, 84, 16, 0.30);
+      background: rgba(246, 237, 218, 0.72);
+    }
+
+    .comparison-settings {
+      white-space: normal;
+      text-align: right;
+    }
+
+    @media (max-width: 1180px) {
+      .abc-controls, .mcmc-controls, .comparison-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .mcmc-target-card { grid-column: span 2; }
+      .abc-layout { grid-template-columns: 1fr; }
+      .abc-scatter, .abc-curves { height: 470px; }
+    }
+
+    @media (max-width: 720px) {
+      .header-actions { justify-content: flex-start; }
+      .abc-controls,
+      .mcmc-controls,
+      .comparison-metrics,
+      .method-note,
+      .comparison-narrative { grid-template-columns: 1fr; }
+      .mcmc-target-card { grid-column: span 1; }
+      .settings-inline { grid-template-columns: 1fr; }
+      .abc-scatter, .abc-curves { height: 430px; }
+      .mcmc-path { height: 470px; }
+      .mcmc-traces { height: 560px; }
+      .comparison-plot { height: 720px; }
+      .comparison-settings { text-align: left; }
+    }
+
+    footer {
+      margin-top: 26px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 1050px) {
+      .scenario-grid,
+      .interpretation,
+      .observed-layout { grid-template-columns: 1fr; }
+      .chart { height: 380px; }
+      .observed-chart { min-height: 430px; }
+    }
+
+    @media (max-width: 680px) {
+      main { width: min(100% - 20px, 1480px); padding-top: 26px; }
+      header { grid-template-columns: 1fr; align-items: start; }
+      header button { justify-self: start; }
+      .panel { padding: 17px; }
+      .panel-head { display: block; }
+      .formula { grid-template-columns: 1fr; }
+    }
+
+
+    /* Final portfolio styling pass */
+    :root {
+      --navy: #10283a;
+      --navy-2: #173e54;
+      --ink: #16283b;
+      --muted: #667584;
+      --line: #d8e0e7;
+      --panel: #ffffff;
+      --page: #f4f6f7;
+      --accent: #1f5b78;
+      --accent-strong: #16465f;
+      --accent-soft: #e8f1f5;
+      --gold: #a66a24;
+      --gold-soft: #fbf2e7;
+      --success: #247158;
+      --success-soft: #e8f4ef;
+      --warning: #8a5a18;
+      --code: #101c26;
+      --shadow: 0 16px 45px rgba(20, 45, 62, 0.075);
+      --shadow-soft: 0 7px 22px rgba(20, 45, 62, 0.055);
+      --radius: 18px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      min-width: 320px;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(31, 91, 120, 0.08), transparent 30rem),
+        radial-gradient(circle at 92% 10%, rgba(166, 106, 36, 0.065), transparent 27rem),
+        var(--page);
+      font-family: Inter, Aptos, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: -0.006em;
+    }
+
+    a { color: inherit; }
+
+    .skip-link {
+      position: fixed;
+      top: -100px;
+      left: 10px;
+      z-index: 100;
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: #fff;
+      background: var(--navy);
+      font-weight: 750;
+      text-decoration: none;
+    }
+
+    .skip-link:focus { top: 10px; }
+
+    main {
+      width: min(1440px, calc(100% - 36px));
+      padding: 28px 0 72px;
+    }
+
+    .site-hero {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      align-items: center;
+      margin-bottom: 16px;
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 24px;
+      padding: clamp(30px, 5vw, 58px);
+      color: #f7fbfd;
+      background: linear-gradient(132deg, var(--navy) 0%, var(--navy-2) 68%, #1b4f62 100%);
+      box-shadow: 0 24px 64px rgba(16, 40, 58, 0.19);
+    }
+
+    .site-hero::after {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      width: 360px;
+      height: 360px;
+      right: -100px;
+      top: -190px;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 50%;
+      box-shadow: 0 0 0 54px rgba(255,255,255,0.035), 0 0 0 108px rgba(255,255,255,0.025);
+    }
+
+    .site-hero h1 {
+      max-width: 840px;
+      color: #fff;
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      font-size: clamp(2.45rem, 5vw, 4.75rem);
+      line-height: 0.99;
+      letter-spacing: -0.045em;
+      text-wrap: balance;
+    }
+
+    .site-hero .eyebrow { color: #a8d3df; }
+
+    .site-hero .lede {
+      max-width: 820px;
+      margin-top: 20px;
+      color: rgba(244, 250, 252, 0.79);
+      font-size: clamp(1rem, 1.7vw, 1.16rem);
+      line-height: 1.65;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 23px;
+    }
+
+    .hero-meta span {
+      border: 1px solid rgba(255,255,255,0.20);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: rgba(255,255,255,0.84);
+      background: rgba(255,255,255,0.065);
+      font-size: 0.78rem;
+      font-weight: 720;
+      letter-spacing: 0.02em;
+    }
+
+    .site-hero .header-actions {
+      align-self: center;
+      max-width: 255px;
+    }
+
+    button {
+      border-radius: 9px;
+      padding: 10px 15px;
+      transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(8, 29, 42, 0.18);
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    summary:focus-visible,
+    .section-nav a:focus-visible {
+      outline: 3px solid rgba(168, 211, 223, 0.95);
+      outline-offset: 3px;
+    }
+
+    .site-hero button {
+      width: 100%;
+      border-color: rgba(255,255,255,0.72);
+      color: var(--navy);
+      background: #fff;
+    }
+
+    .site-hero .button-secondary {
+      color: #fff;
+      background: transparent;
+    }
+
+    .section-nav {
+      position: sticky;
+      top: 10px;
+      z-index: 20;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      margin: 0 0 16px;
+      border: 1px solid rgba(216, 224, 231, 0.88);
+      border-radius: 13px;
+      padding: 6px;
+      background: rgba(255,255,255,0.88);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(16px);
+      scrollbar-width: none;
+    }
+
+    .section-nav::-webkit-scrollbar { display: none; }
+
+    .section-nav a {
+      flex: 0 0 auto;
+      border-radius: 8px;
+      padding: 8px 11px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 760;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .section-nav a:hover {
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+    }
+
+    .status {
+      min-height: 44px;
+      margin-bottom: 16px;
+      border-radius: 11px;
+      box-shadow: none;
+      font-size: 0.9rem;
+    }
+
+    .scope-note {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 13px;
+      align-items: start;
+      margin-bottom: 16px;
+      border: 1px solid rgba(31, 91, 120, 0.18);
+      border-left: 4px solid var(--accent);
+      border-radius: 12px;
+      padding: 15px 17px;
+      background: rgba(232, 241, 245, 0.72);
+    }
+
+    .scope-note::before {
+      content: "i";
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--accent);
+      font-family: Georgia, serif;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .scope-note > div { min-width: 0; }
+
+    .reading-guide {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .guide-step {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 11px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 15px;
+      background: rgba(255,255,255,0.72);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .guide-number {
+      display: grid;
+      place-items: center;
+      width: 29px;
+      height: 29px;
+      border-radius: 8px;
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+      font: 800 0.78rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .guide-step strong { display: block; font-size: 0.9rem; }
+    .guide-step p { margin: 3px 0 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+
+    .panel {
+      position: relative;
+      scroll-margin-top: 76px;
+      margin-top: 18px;
+      padding: clamp(20px, 3vw, 32px);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      left: 32px;
+      right: 32px;
+      top: 0;
+      height: 3px;
+      border-radius: 0 0 3px 3px;
+      background: linear-gradient(90deg, var(--accent), rgba(31, 91, 120, 0));
+      opacity: 0.72;
+    }
+
+    .panel-head { margin-bottom: 21px; }
+
+    .panel-kicker {
+      margin: 0 0 7px;
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 820;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      color: var(--ink);
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      font-size: clamp(1.45rem, 2.2vw, 2rem);
+      font-weight: 620;
+      letter-spacing: -0.026em;
+    }
+
+    h3 { letter-spacing: -0.012em; }
+
+    .panel-head p {
+      max-width: 860px;
+      margin-top: 8px;
+      line-height: 1.58;
+    }
+
+    .fixed-badge {
+      border: 1px solid rgba(36, 113, 88, 0.16);
+      padding: 6px 10px;
+    }
+
+    .observed-chart,
+    .abc-plot-card,
+    .scenario-card {
+      border-radius: 14px;
+      box-shadow: 0 4px 14px rgba(20, 45, 62, 0.035);
+    }
+
+    .summary-card,
+    .control-card,
+    .metric-card,
+    .method-note article,
+    .interpretation article,
+    .comparison-copy,
+    .summary-callout {
+      border-radius: 12px;
+    }
+
+    .metric-card {
+      border-top: 3px solid rgba(31, 91, 120, 0.42);
+      background: linear-gradient(180deg, #fff, #f9fbfc);
+    }
+
+    .metric-value { color: var(--ink); }
+
+    .control-card { background: #f7fafb; }
+
+    .segmented span { font-size: 0.84rem; }
+
+    .method-note article,
+    .interpretation article {
+      position: relative;
+      overflow: hidden;
+      padding: 17px 18px;
+    }
+
+    .method-note article::before,
+    .interpretation article::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: rgba(31, 91, 120, 0.42);
+    }
+
+    .summary-callout { border-left: 4px solid var(--accent); }
+    .summary-callout.poor { border-left-color: var(--gold); background: var(--gold-soft); }
+    .r0-callout { grid-column: 1 / -1; }
+
+    details { overflow: clip; background: #f8fafb; }
+    details[open] { box-shadow: 0 5px 16px rgba(20, 45, 62, 0.045); }
+    summary { color: var(--ink); }
+    summary::marker { color: var(--accent); }
+
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 22px 2px 0;
+      line-height: 1.55;
+    }
+
+    .footer-title {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink);
+      font-weight: 800;
+    }
+
+    @media (max-width: 900px) {
+      .site-hero { grid-template-columns: 1fr; align-items: start; }
+      .site-hero .header-actions { max-width: none; width: 100%; justify-content: flex-start; }
+      .site-hero button { width: auto; }
+      .reading-guide { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 680px) {
+      main { width: min(100% - 18px, 1440px); padding-top: 10px; }
+      .site-hero { border-radius: 17px; padding: 27px 21px; }
+      .site-hero h1 { font-size: clamp(2.25rem, 12vw, 3.4rem); }
+      .site-hero button { width: 100%; }
+      .section-nav { top: 4px; margin-inline: -1px; }
+      .scope-note { grid-template-columns: auto minmax(0, 1fr); }
+      .panel { padding: 19px 15px; border-radius: 15px; }
+      .panel::before { left: 15px; right: 15px; }
+      .fixed-badge { margin-top: 11px; }
+    }
+
+  </style>
+<body>
+  <a class="skip-link" href="#rejection">Skip to interactive controls</a>
+  <main>
+    <header class="site-hero">
+      <div>
+        <p class="eyebrow">Interactive Bayesian statistics · learning demo</p>
+        <h1>What can — and can't — ABC tell you about an epidemic?</h1>
+        <p class="lede">
+          Approximate Bayesian Computation estimates parameters without ever writing down a likelihood: simulate, compare to the data, keep what's close. Using one stochastic SIR outbreak, this dashboard shows two things — ABC recovers the reproduction number R0 reliably even when it can't separate β from γ, and a Markov chain sampler reaches the same posterior far more cheaply than blind rejection sampling once both are given the <em>same</em> simulation budget.
+        </p>
+        <div class="hero-meta" aria-label="Dashboard implementation details">
+          <span>Client-side only</span>
+          <span>Same simulation budget, both methods</span>
+          <span>Percentile-based acceptance</span>
+          <span>Vanilla JavaScript + Plotly</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="resimulate-abc" type="button">New inference seed</button>
+      </div>
+    </header>
+
+    <nav class="section-nav" aria-label="Dashboard sections">
+      <a href="#intro">What is ABC?</a>
+      <a href="#observed">Observed data</a>
+      <a href="#rejection">Rejection ABC</a>
+      <a href="#mcmc">ABC-MCMC &amp; efficiency</a>
+      <a href="#appendix">Appendix</a>
+    </nav>
+
+    <aside class="scope-note">
+      <div>
+        <strong>Two learning objectives drive everything below.</strong>
+        (1) ABC pins down R0 = β/γ far more tightly than it pins down β and γ individually — watch this sharpen or blur as you switch summary statistics. (2) ABC-MCMC and rejection sampling are given the <em>exact same</em> number of simulator calls (the budget B); the comparison panel shows how much more posterior signal MCMC extracts from that identical budget.
+      </div>
+    </aside>
+
+    <div id="live-takeaway" class="takeaway-banner">
+      <p class="panel-kicker">Current takeaway</p>
+      <p id="live-takeaway-text">Run the inference below to see how closely ABC recovers the true parameters, and how much more efficient ABC-MCMC is than rejection sampling at the same simulation budget.</p>
+    </div>
+
+    <section class="reading-guide" aria-label="Suggested exploration sequence">
+      <article class="guide-step"><span class="guide-number">01</span><div><strong>See what ABC actually does</strong><p>No likelihood is evaluated anywhere below — only simulation and comparison. Read the short explainer first.</p></div></article>
+      <article class="guide-step"><span class="guide-number">02</span><div><strong>Watch identifiability, not just fit</strong><p>Toggle rich vs. poor summary in the rejection panel. R0 should stay comparatively tight; β and γ individually should not.</p></div></article>
+      <article class="guide-step"><span class="guide-number">03</span><div><strong>Compare efficiency at equal cost</strong><p>ABC-MCMC targets the same tolerance using the identical simulation budget B. Compare accepted draws vs. retained states.</p></div></article>
+    </section>
+
+    <section id="intro" class="panel" aria-labelledby="intro-title">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Likelihood-free inference, briefly</p>
+          <h2 id="intro-title">Why ABC, and how does it work?</h2>
+          <p>Ordinary Bayesian inference combines a prior with a likelihood: <em>p(θ | data) ∝ p(data | θ) · p(θ)</em>. For a stochastic epidemic, that likelihood involves summing over every possible sequence of daily infections and recoveries consistent with the data — intractable in general. ABC sidesteps the likelihood entirely: if you can <em>simulate</em> from the model, you don't need to be able to evaluate it.</p>
+        </div>
+      </div>
+
+      <div class="method-note">
+        <article>
+          <h3>1. Draw</h3>
+          <p>Sample candidate parameters (β, γ) from the prior — no data used yet, exactly as in standard Bayesian inference.</p>
+        </article>
+        <article>
+          <h3>2. Simulate</h3>
+          <p>Run the stochastic SIR model forward from those parameters to generate a full synthetic epidemic.</p>
+        </article>
+        <article>
+          <h3>3. Compare &amp; accept</h3>
+          <p>Reduce the simulation to a summary statistic, measure its distance from the observed summary, and keep the draw only if that distance is small enough.</p>
+        </article>
+      </div>
+
+      <p class="small-note" style="margin-top:16px;">Surviving draws are treated as approximate samples from the posterior. The approximation has two knobs, both explored below: <strong>which summary statistic</strong> defines "close," and <strong>how the surviving draws are generated</strong> — independently from the prior (rejection) or via a Markov chain (ABC-MCMC).</p>
+    </section>
+
+    <section id="observed" class="panel" aria-labelledby="observed-title">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Data-generating reference</p>
+          <h2 id="observed-title">A single fixed epidemic becomes the "observed" data</h2>
+          <p>This stored stochastic outbreak was generated once at β<sub>true</sub> = 0.4 and γ<sub>true</sub> = 0.1 (R0 = 4.0). It never changes; inference proceeds by simulating candidate outbreaks and asking which ones resemble it.</p>
+        </div>
+        <span class="fixed-badge">Embedded, not regenerated</span>
+      </div>
+
+      <div class="observed-layout">
+        <div id="observed-chart" class="observed-chart" aria-label="Fixed observed SIR epidemic trajectory"></div>
+        <div class="summary-stack">
+          <article class="summary-card accent">
+            <h3>Rich summary</h3>
+            <dl class="stat-list">
+              <dt>Peak infection height</dt><dd id="observed-peak-height">—</dd>
+              <dt>Peak timing</dt><dd id="observed-peak-day">—</dd>
+              <dt>Final epidemic size</dt><dd id="observed-final-size">—</dd>
+            </dl>
+            <div id="rich-vector" class="vector">—</div>
+          </article>
+
+          <article class="summary-card">
+            <h3>Poor summary</h3>
+            <p class="small-note">Intentionally discards the height and timing of the epidemic peak — this is what breaks β/γ identifiability later.</p>
+            <div id="poor-vector" class="vector">—</div>
+          </article>
+
+          <article class="summary-card">
+            <h3>Fixed-data provenance</h3>
+            <dl class="stat-list">
+              <dt>Offline generation seed</dt><dd id="observed-seed">—</dd>
+              <dt>Horizon</dt><dd>100 days</dd>
+              <dt>Population</dt><dd>1,000</dd>
+              <dt>Basic reproduction ratio</dt><dd>4.0</dd>
+            </dl>
+            <p class="small-note">The seed documents provenance only. Reloading the page reads stored arrays and does not call the simulator for the observed curve.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="rejection" class="panel" aria-labelledby="rejection-title">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Method 01 · independent prior proposals</p>
+          <h2 id="rejection-title">ABC rejection sampling — and what it can identify</h2>
+          <p>Draw parameters from the prior, simulate one epidemic, and keep the closest proposals to the observed summary. Acceptance here is <strong>percentile-based</strong>: instead of a hand-tuned absolute tolerance, you choose what fraction of the simulation budget survives, so the rich and poor summaries can be compared on equal footing.</p>
+        </div>
+        <span class="fixed-badge">Fresh batch every run</span>
+      </div>
+
+      <div id="abc-status" class="status abc-status" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="abc-status-text">Preparing the rejection-sampling batch…</span>
+      </div>
+
+      <div class="abc-controls">
+        <div class="control-card">
+          <span class="control-label">Summary statistic</span>
+          <div class="segmented" role="radiogroup" aria-label="ABC summary statistic">
+            <label>
+              <input type="radio" name="abc-summary" value="rich" checked>
+              <span>Rich: peak, day, final</span>
+            </label>
+            <label>
+              <input type="radio" name="abc-summary" value="poor">
+              <span>Poor: final only</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="control-card">
+          <label for="percentile-slider">Acceptance percentile</label>
+          <div class="range-row">
+            <input id="percentile-slider" type="range" min="0.5" max="15" step="0.5" value="2">
+            <output id="percentile-value" class="epsilon-readout" for="percentile-slider">2.0%</output>
+          </div>
+          <p class="small-note">Keeps the closest <span id="percentile-count-note">2.0%</span> of the batch. Re-filters the cached batch instantly — no resimulation.</p>
+        </div>
+
+        <div class="control-card">
+          <label for="budget-slider">Simulation budget B</label>
+          <div class="range-row">
+            <input id="budget-slider" type="range" min="1000" max="20000" step="500" value="5000">
+            <output id="budget-value" class="epsilon-readout" for="budget-slider">5,000</output>
+          </div>
+          <p id="budget-warning" class="small-note">This is the shared compute budget both methods below will use. Release the slider to resimulate.</p>
+        </div>
+
+        <article class="metric-card">
+          <span class="metric-label">Accepted draws</span>
+          <strong id="abc-acceptance-rate" class="metric-value">—</strong>
+          <span id="abc-accepted-count" class="metric-subvalue">—</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Effective tolerance ε</span>
+          <strong id="abc-epsilon-readout" class="metric-value mono-inline">—</strong>
+          <span class="metric-subvalue">distance at the percentile cutoff</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Current batch seed</span>
+          <strong id="abc-seed" class="metric-value mono-inline">—</strong>
+          <span id="abc-batch-time" class="metric-subvalue">not yet simulated</span>
+        </article>
+      </div>
+
+      <div class="abc-layout">
+        <article class="abc-plot-card">
+          <div class="abc-plot-head">
+            <h3>Prior proposals and percentile filter</h3>
+            <p>Accepted points are the closest matches to the observed summary. Watch how the accepted cloud's shape changes between summaries — that shape <em>is</em> the identifiability story.</p>
+          </div>
+          <div id="abc-scatter" class="abc-scatter" aria-label="ABC rejection proposals in beta gamma parameter space"></div>
+        </article>
+
+        <article class="abc-plot-card">
+          <div class="abc-plot-head">
+            <h3>Accepted epidemic trajectories</h3>
+            <p>The closest accepted trajectories show what the current ABC rule considers observationally plausible.</p>
+          </div>
+          <div id="abc-curves" class="abc-curves" aria-label="Accepted simulated infected trajectories over observed epidemic"></div>
+        </article>
+      </div>
+
+      <div class="method-note">
+        <article>
+          <h3>R0 vs. β and γ</h3>
+          <p>Under the rich summary the accepted cloud is already an elongated ridge along β/γ ≈ 4; under the poor summary it widens further. Either way, R0 stays far better constrained than either rate alone.</p>
+        </article>
+        <article>
+          <h3>Why percentile, not raw ε</h3>
+          <p>A fixed absolute ε accepts very different counts under different summaries, confounding "the summary is less informative" with "more points were let through." Percentile acceptance removes that confound.</p>
+        </article>
+        <article>
+          <h3>Lossy summaries</h3>
+          <p>Final size alone cannot distinguish fast, sharp outbreaks from slower, longer ones with similar totals — hence the wider, more degenerate ridge.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="mcmc" class="panel" aria-labelledby="mcmc-title">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Method 02 · same budget, dependent local proposals</p>
+          <h2 id="mcmc-title">ABC-MCMC — is it actually more efficient?</h2>
+          <p>Start in the ABC-compatible region, propose nearby parameters with a Gaussian random walk, and accept only in-bounds proposals whose fresh simulation beats the rejection panel's ε. The chain spends <strong>exactly the same simulation budget B</strong> as rejection sampling just did. The question this panel answers: for that identical cost, how much more usable posterior signal does the chain return?</p>
+        </div>
+        <span id="comparison-settings-badge" class="fixed-badge">Budget-matched to Panel 1</span>
+      </div>
+
+      <div id="mcmc-status" class="status abc-status" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="mcmc-status-text">Waiting for the cached rejection batch before starting ABC-MCMC…</span>
+      </div>
+
+      <div class="mcmc-controls">
+        <div class="control-card mcmc-target-card">
+          <span class="control-label">Chain target snapshot</span>
+          <dl class="settings-inline">
+            <div><dt>Summary</dt><dd id="mcmc-summary-setting">Rich</dd></div>
+            <div><dt>Tolerance ε</dt><dd id="mcmc-epsilon-setting" class="mono-inline">—</dd></div>
+            <div><dt>Shared budget B</dt><dd id="mcmc-budget-setting" class="mono-inline">—</dd></div>
+            <div><dt>Burn-in</dt><dd id="mcmc-burnin-setting">first 10% of budget</dd></div>
+          </dl>
+          <p class="small-note">The chain snapshots Panel 1's summary, ε, and budget B when "Run chain" is pressed. Later changes mark the plotted chain as stale rather than retroactively altering it.</p>
+        </div>
+
+        <div class="control-card">
+          <label for="sigma-beta-slider">Proposal scale σ<sub>β</sub></label>
+          <div class="range-row">
+            <input id="sigma-beta-slider" type="range" min="0.005" max="0.150" step="0.005" value="0.045">
+            <output id="sigma-beta-value" class="epsilon-readout" for="sigma-beta-slider">0.045</output>
+          </div>
+          <p class="small-note">Random-walk standard deviation for β.</p>
+        </div>
+
+        <div class="control-card">
+          <label for="sigma-gamma-slider">Proposal scale σ<sub>γ</sub></label>
+          <div class="range-row">
+            <input id="sigma-gamma-slider" type="range" min="0.002" max="0.080" step="0.002" value="0.018">
+            <output id="sigma-gamma-value" class="epsilon-readout" for="sigma-gamma-slider">0.018</output>
+          </div>
+          <p class="small-note">Random-walk standard deviation for γ.</p>
+        </div>
+
+        <article class="metric-card">
+          <span class="metric-label">Chain acceptance</span>
+          <strong id="mcmc-acceptance-rate" class="metric-value">—</strong>
+          <span id="mcmc-accepted-moves" class="metric-subvalue">—</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Retained states</span>
+          <strong id="mcmc-retained" class="metric-value">—</strong>
+          <span class="metric-subvalue">after burn-in</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Initialization</span>
+          <strong id="mcmc-init-attempts" class="metric-value">—</strong>
+          <span class="metric-subvalue">prior draws until distance &lt; ε (counts against B)</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Chain seed</span>
+          <strong id="mcmc-seed" class="metric-value mono-inline">—</strong>
+          <span id="mcmc-runtime" class="metric-subvalue">not yet simulated</span>
+        </article>
+
+        <article class="metric-card mcmc-target-card">
+          <span class="metric-label">Post-burn-in mean</span>
+          <strong id="mcmc-posterior-mean" class="metric-value compact">β = — · γ = —</strong>
+          <span id="mcmc-posterior-distance" class="metric-subvalue">available after burn-in</span>
+        </article>
+      </div>
+
+      <div class="mcmc-action-row">
+        <button id="run-mcmc" type="button">Run chain at current settings</button>
+        <p id="mcmc-config-note" class="small-note">Next run: Rich summary, budget-matched ε, σβ = 0.045, σγ = 0.018.</p>
+      </div>
+
+      <div class="mcmc-layout">
+        <article class="abc-plot-card">
+          <div class="abc-plot-head">
+            <h3>Live chain path in parameter space</h3>
+            <p>The faded background is the matched rejection target. The connected path includes every chain state, including exact repeats after rejected proposals.</p>
+          </div>
+          <div id="mcmc-path" class="mcmc-path" aria-label="ABC-MCMC chain path over rejection accepted points"></div>
+        </article>
+
+        <article class="abc-plot-card">
+          <div class="abc-plot-head">
+            <h3>β and γ trace plots</h3>
+            <p>The shaded band is burn-in (first 10% of the post-initialization budget). Long flat stretches signal repeated rejections; gradual movement and repeated visits indicate local exploration.</p>
+          </div>
+          <div id="mcmc-traces" class="mcmc-traces" aria-label="ABC-MCMC beta and gamma trace plots"></div>
+        </article>
+      </div>
+
+      <div class="method-note">
+        <article>
+          <h3>Dependent states</h3>
+          <p>The next proposal is centered on the current state, so retained draws are autocorrelated and must not be interpreted as independent simulations.</p>
+        </article>
+        <article>
+          <h3>Acceptance rule</h3>
+          <p>With uniform priors and a symmetric random walk, an in-bounds proposal is accepted exactly when its simulated distance is below ε. Out-of-bounds proposals cost no SIR simulation — they're free, and don't draw down the shared budget.</p>
+        </article>
+        <article>
+          <h3>Same budget, different yield</h3>
+          <p>Rejection spends all of B on independent prior draws. MCMC spends B on initialization plus a local random walk that, once inside the compatible region, keeps landing nearby — so a much larger share of its budget produces usable posterior states.</p>
+        </article>
+      </div>
+
+      <div id="comparison-status" class="status comparison-status" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="comparison-status-text">Waiting for the rejection batch and ABC-MCMC chain to complete...</span>
+      </div>
+
+      <div class="comparison-metrics">
+        <article class="metric-card">
+          <span class="metric-label">Matched settings</span>
+          <strong id="comparison-matched-settings" class="metric-value compact">—</strong>
+          <span id="comparison-proposal-settings" class="metric-subvalue">same summary and tolerance</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Rejection yield</span>
+          <strong id="comparison-rejection-yield" class="metric-value">—</strong>
+          <span id="comparison-rejection-rate" class="metric-subvalue">ABC-compatible draws</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">MCMC yield</span>
+          <strong id="comparison-mcmc-yield" class="metric-value">—</strong>
+          <span id="comparison-mcmc-rate" class="metric-subvalue">retained post-burn-in states</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Simulator calls (both methods)</span>
+          <strong id="comparison-budget" class="metric-value compact">—</strong>
+          <span class="metric-subvalue">identical shared budget B</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Central 80% footprint</span>
+          <strong id="comparison-footprint" class="metric-value compact">—</strong>
+          <span class="metric-subvalue">rejection · MCMC, as % of prior area</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">Rejection R0</span>
+          <strong id="comparison-rejection-r0" class="metric-value compact">—</strong>
+          <span id="comparison-rejection-r0-credible-interval" class="metric-subvalue">median · 90% credible interval</span>
+        </article>
+
+        <article class="metric-card">
+          <span class="metric-label">MCMC R0</span>
+          <strong id="comparison-mcmc-r0" class="metric-value compact">—</strong>
+          <span id="comparison-mcmc-r0-credible-interval" class="metric-subvalue">median · 90% credible interval</span>
+        </article>
+      </div>
+
+      <article class="abc-plot-card">
+        <div class="abc-plot-head">
+          <h3>Joint parameter sample with marginal distributions</h3>
+          <p>The joint view reveals posterior geometry; the marginal panels show each parameter separately. Red references mark the generating values.</p>
+        </div>
+        <div id="comparison-plot" class="comparison-plot" aria-label="Combined comparison of rejection sampling and ABC-MCMC parameter samples"></div>
+      </article>
+
+      <div class="comparison-narrative">
+        <article class="comparison-copy">
+          <h3>What the budget comparison shows</h3>
+          <p id="comparison-efficiency-copy">The comparison will appear after both methods finish.</p>
+          <p id="comparison-target-copy"></p>
+          <p id="comparison-tuning-copy"></p>
+        </article>
+
+        <aside id="summary-callout" class="summary-callout">
+          <h3 id="summary-callout-title">Summary-statistic effect</h3>
+          <p id="summary-callout-copy">The rich and poor summaries will be interpreted using the completed chain's settings.</p>
+        </aside>
+
+        <aside id="r0-callout" class="summary-callout r0-callout">
+          <h3 id="r0-callout-title">R0 identification</h3>
+          <p id="r0-callout-copy">R0 credible intervals will appear after both methods finish.</p>
+        </aside>
+      </div>
+    </section>
+
+    <details id="appendix" class="panel appendix-details">
+      <summary>Appendix — simulator validation and full source code</summary>
+
+      <div class="appendix-body">
+        <section aria-labelledby="validation-comparison-title">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Model check</p>
+              <h2 id="validation-comparison-title">Does the stochastic simulator behave sensibly?</h2>
+              <p>For each parameter regime, 500 seeded stochastic trajectories are compared with the deterministic SIR ODE. This is a software-correctness check, not part of the ABC story above — it exists so you can trust the engine behind it.</p>
+            </div>
+            <button id="rerun" class="button-secondary" type="button">Rerun validation</button>
+          </div>
+          <div id="status" class="status" role="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="status-text">Preparing validation runs…</span>
+          </div>
+          <div id="scenario-grid" class="scenario-grid"></div>
+        </section>
+
+        <section aria-labelledby="diagnostics-title">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Numerical checks</p>
+              <h2 id="diagnostics-title">Validation diagnostics</h2>
+              <p>Every state in all 1,500 trajectories is checked for population conservation, non-negativity, and valid compartment movement; trajectory error is then summarized against the ODE reference.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Regime</th>
+                  <th>R₀ = β/γ</th>
+                  <th>Structural checks</th>
+                  <th>I(t) nRMSE</th>
+                  <th>Peak I: mean / ODE</th>
+                  <th>Peak day: mean / ODE</th>
+                  <th>Final size: mean / ODE</th>
+                </tr>
+              </thead>
+              <tbody id="diagnostics-body"></tbody>
+            </table>
+          </div>
+
+          <div class="interpretation">
+            <article>
+              <h3>Below threshold</h3>
+              <p>When β/γ &lt; 1, both descriptions show immediate decline from the five initial infections.</p>
+            </article>
+            <article>
+              <h3>Supercritical outbreaks</h3>
+              <p>For β/γ &gt; 1, the stochastic ensemble reproduces the ODE's outbreak scale and timing while individual paths remain visibly noisy.</p>
+            </article>
+            <article>
+              <h3>Expected small differences</h3>
+              <p>The daily binomial process is not algebraically identical to the continuous-time ODE, so discretization and nonlinear averaging produce modest offsets.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="implementation" aria-labelledby="implementation-title">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Reproducible implementation</p>
+              <h2 id="implementation-title">Read the algorithms executed by this page</h2>
+              <p>The expandable blocks contain the exact seeded random generator, binomial sampler, SIR simulator, rejection sampler, ABC-MCMC transition, and comparison code used above. No black-box SIR, ABC, or MCMC package is called.</p>
+            </div>
+          </div>
+
+          <div class="formula" aria-label="Stochastic SIR transition probabilities">
+            <div>new infections ∼ Binomial(S, 1 − exp(−βI/N · Δt))</div>
+            <div>new recoveries ∼ Binomial(I, 1 − exp(−γ · Δt))</div>
+          </div>
+
+          <details>
+            <summary>Seeded random generator, binomial sampler, and stochastic SIR</summary>
+            <pre><code id="stochastic-code"></code></pre>
+          </details>
+          <details>
+            <summary>Deterministic ODE reference solved with RK4</summary>
+            <pre><code id="deterministic-code"></code></pre>
+          </details>
+          <details>
+            <summary>Validation routine</summary>
+            <pre><code id="validation-code"></code></pre>
+          </details>
+          <details>
+            <summary>Hard-fixed observed arrays and summary-statistic function</summary>
+            <pre><code id="observed-code"></code></pre>
+          </details>
+          <details>
+            <summary>Panel 1 rejection sampler, percentile acceptance, and live filtering</summary>
+            <pre><code id="rejection-code"></code></pre>
+          </details>
+          <details>
+            <summary>Panel 2 ABC-MCMC random walk, budget-matched burn-in, and live rendering</summary>
+            <pre><code id="mcmc-code"></code></pre>
+          </details>
+          <details>
+            <summary>Budget-matched comparison, efficiency diagnostics, and combined figure</summary>
+            <pre><code id="comparison-code"></code></pre>
+          </details>
+        </section>
+      </div>
+    </details>
+
+    <footer>
+      <span class="footer-title">Implementation notes</span>
+      Everything runs in the browser. Validation seeds are 20260806, 20261806, and 20262806; the fixed observed-data provenance seed is 4041001. The inference base seed is stored in <span class="mono-inline">sessionStorage</span>, and the MCMC seed is derived deterministically from it. Rejection and ABC-MCMC always spend the same simulation budget B. Population N = 1,000; horizon = 100 days.
+    </footer>
+  </main>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script>
+"use strict";
+
+const DEFAULTS = Object.freeze({
+  N: 1000,
+  I0: 5,
+  R0: 0,
+  T: 100,
+  dt: 1
+});
+
+// Generated once offline using simulateStochasticSIR and seed 4041001.
+// These literal arrays are the immutable observed dataset for every later panel.
+const OBSERVED_EPIDEMIC = Object.freeze({
+  metadata: Object.freeze({"seed":4041001,"beta":0.4,"gamma":0.1,"N":1000,"I0":5,"R0":0,"T":100,"dt":1}),
+  S: Object.freeze([995,994,992,985,982,974,963,952,938,922,901,874,841,791,734,691,650,603,539,481,428,373,326,276,238,200,177,155,131,116,100,90,77,72,63,57,52,46,43,41,40,39,39,35,33,32,31,29,27,27,27,27,26,26,25,24,24,23,22,22,22,22,22,22,22,22,22,22,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,20,20,20,20,20,20,20,20,20,20,20,20,20,20]),
+  I: Object.freeze([5,6,8,15,18,24,32,41,51,63,77,98,120,161,200,229,251,268,303,331,356,377,397,404,410,409,397,385,376,359,329,306,284,258,241,218,202,188,171,159,151,133,121,114,105,97,87,80,71,63,56,54,48,42,39,37,36,36,35,32,25,22,20,17,17,15,14,13,14,13,12,12,10,8,7,7,7,6,4,4,4,4,4,4,4,4,3,4,4,4,3,3,3,3,2,2,2,1,1,1,1]),
+  R: Object.freeze([0,0,0,0,0,2,5,7,11,15,22,28,39,48,66,80,99,129,158,188,216,250,277,320,352,391,426,460,493,525,571,604,639,670,696,725,746,766,786,800,809,828,840,851,862,871,882,891,902,910,917,919,926,932,936,939,940,941,943,946,953,956,958,961,961,963,964,965,965,966,967,967,969,971,972,972,972,973,975,975,975,975,975,975,975,975,976,976,976,976,977,977,977,977,978,978,978,979,979,979,979]),
+  newInfections: Object.freeze([1,2,7,3,8,11,11,14,16,21,27,33,50,57,43,41,47,64,58,53,55,47,50,38,38,23,22,24,15,16,10,13,5,9,6,5,6,3,2,1,1,0,4,2,1,1,2,2,0,0,0,1,0,1,1,0,1,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0]),
+  newRecoveries: Object.freeze([0,0,0,0,2,3,2,4,4,7,6,11,9,18,14,19,30,29,30,28,34,27,43,32,39,35,34,33,32,46,33,35,31,26,29,21,20,20,14,9,19,12,11,11,9,11,9,11,8,7,2,7,6,4,3,1,1,2,3,7,3,2,3,0,2,1,1,0,1,1,0,2,2,1,0,0,1,2,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,1,0,0,0])
+});
+
+/** Deterministic, seedable PRNG for reproducible browser simulations. */
+function mulberry32(seed) {
+  let state = seed >>> 0;
+  return function random() {
+    state = (state + 0x6D2B79F5) | 0;
+    let value = Math.imul(state ^ (state >>> 15), 1 | state);
+    value ^= value + Math.imul(value ^ (value >>> 7), 61 | value);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Natural log of Gamma(z), using the Lanczos approximation. */
+function logGamma(z) {
+  const coefficients = [
+    0.99999999999980993,
+    676.5203681218851,
+    -1259.1392167224028,
+    771.32342877765313,
+    -176.61502916214059,
+    12.507343278686905,
+    -0.13857109526572012,
+    9.9843695780195716e-6,
+    1.5056327351493116e-7
+  ];
+  const g = 7;
+
+  if (z < 0.5) {
+    return Math.log(Math.PI) - Math.log(Math.sin(Math.PI * z)) - logGamma(1 - z);
+  }
+
+  const shifted = z - 1;
+  let series = coefficients[0];
+  for (let i = 1; i < coefficients.length; i += 1) {
+    series += coefficients[i] / (shifted + i);
+  }
+  const t = shifted + g + 0.5;
+  return 0.5 * Math.log(2 * Math.PI)
+    + (shifted + 0.5) * Math.log(t)
+    - t
+    + Math.log(series);
+}
+
+/**
+ * Draw X ~ Binomial(n, p) without a statistics library.
+ *
+ * For small n*p, inverse-CDF recursion is efficient. For larger n*p,
+ * tangent-envelope rejection sampling avoids n Bernoulli draws. Values
+ * p > 0.5 use symmetry: Bin(n,p) = n - Bin(n,1-p).
+ */
+function sampleBinomial(n, p, rng) {
+  if (!Number.isInteger(n) || n < 0) {
+    throw new RangeError("n must be a non-negative integer.");
+  }
+  if (!Number.isFinite(p) || p < 0 || p > 1) {
+    throw new RangeError("p must lie in [0, 1].");
+  }
+  if (n === 0 || p === 0) return 0;
+  if (p === 1) return n;
+
+  let probability = p;
+  let reflect = false;
+  if (probability > 0.5) {
+    probability = 1 - probability;
+    reflect = true;
+  }
+
+  const q = 1 - probability;
+  const mean = n * probability;
+  let draw;
+
+  if (mean < 30) {
+    const odds = probability / q;
+    let mass = Math.exp(n * Math.log(q));
+    let cumulative = mass;
+    const u = rng();
+    draw = 0;
+
+    while (u > cumulative && draw < n) {
+      draw += 1;
+      mass *= ((n - draw + 1) / draw) * odds;
+      cumulative += mass;
+    }
+  } else {
+    const scale = Math.sqrt(2 * mean * q);
+    const logP = Math.log(probability);
+    const logQ = Math.log(q);
+
+    for (;;) {
+      let y;
+      let proposal;
+      do {
+        y = Math.tan(Math.PI * rng());
+        proposal = scale * y + mean;
+      } while (proposal < 0 || proposal >= n + 1);
+
+      draw = Math.floor(proposal);
+      const logMass = logGamma(n + 1)
+        - logGamma(draw + 1)
+        - logGamma(n - draw + 1)
+        + draw * logP
+        + (n - draw) * logQ;
+      const acceptanceBound = 1.2 * scale * (1 + y * y) * Math.exp(logMass);
+
+      if (rng() <= acceptanceBound) break;
+    }
+  }
+
+  return reflect ? n - draw : draw;
+}
+
+/**
+ * Simulate the discrete-time stochastic SIR model for T days.
+ * New infections and recoveries are sampled from start-of-day counts.
+ */
+function simulateStochasticSIR({
+  beta,
+  gamma,
+  N = DEFAULTS.N,
+  I0 = DEFAULTS.I0,
+  R0 = DEFAULTS.R0,
+  T = DEFAULTS.T,
+  dt = DEFAULTS.dt,
+  rng = Math.random
+}) {
+  if (!(beta >= 0) || !(gamma >= 0)) {
+    throw new RangeError("beta and gamma must be non-negative.");
+  }
+  if (!Number.isInteger(N) || !Number.isInteger(I0) || !Number.isInteger(R0)) {
+    throw new TypeError("N, I0, and R0 must be integers.");
+  }
+  if (I0 < 0 || R0 < 0 || I0 + R0 > N) {
+    throw new RangeError("Initial compartment counts are invalid.");
+  }
+  if (!Number.isInteger(T) || T < 0 || !(dt > 0)) {
+    throw new RangeError("T must be a non-negative integer and dt must be positive.");
+  }
+
+  const S = new Int32Array(T + 1);
+  const I = new Int32Array(T + 1);
+  const R = new Int32Array(T + 1);
+  const newInfections = new Int32Array(T);
+  const newRecoveries = new Int32Array(T);
+
+  S[0] = N - I0 - R0;
+  I[0] = I0;
+  R[0] = R0;
+
+  const recoveryProbability = 1 - Math.exp(-gamma * dt);
+
+  for (let day = 0; day < T; day += 1) {
+    const infectionProbability = 1 - Math.exp(-beta * I[day] / N * dt);
+    const infections = sampleBinomial(S[day], infectionProbability, rng);
+    const recoveries = sampleBinomial(I[day], recoveryProbability, rng);
+
+    newInfections[day] = infections;
+    newRecoveries[day] = recoveries;
+    S[day + 1] = S[day] - infections;
+    I[day + 1] = I[day] + infections - recoveries;
+    R[day + 1] = R[day] + recoveries;
+  }
+
+  return { S, I, R, newInfections, newRecoveries };
+}
+
+function sirDerivative(state, beta, gamma, N) {
+  const [S, I] = state;
+  const incidence = beta * S * I / N;
+  return [-incidence, incidence - gamma * I, gamma * I];
+}
+
+function rk4Step(state, h, beta, gamma, N) {
+  const k1 = sirDerivative(state, beta, gamma, N);
+  const k2 = sirDerivative(state.map((value, index) => value + 0.5 * h * k1[index]), beta, gamma, N);
+  const k3 = sirDerivative(state.map((value, index) => value + 0.5 * h * k2[index]), beta, gamma, N);
+  const k4 = sirDerivative(state.map((value, index) => value + h * k3[index]), beta, gamma, N);
+
+  return state.map((value, index) => value + h * (
+    k1[index] + 2 * k2[index] + 2 * k3[index] + k4[index]
+  ) / 6);
+}
+
+/** Solve the reference deterministic SIR ODE with RK4 and return daily values. */
+function simulateDeterministicSIR({
+  beta,
+  gamma,
+  N = DEFAULTS.N,
+  I0 = DEFAULTS.I0,
+  R0 = DEFAULTS.R0,
+  T = DEFAULTS.T,
+  internalDt = 0.05
+}) {
+  if (!(internalDt > 0) || Math.abs(1 / internalDt - Math.round(1 / internalDt)) > 1e-10) {
+    throw new RangeError("internalDt must divide one day exactly.");
+  }
+
+  const S = new Float64Array(T + 1);
+  const I = new Float64Array(T + 1);
+  const R = new Float64Array(T + 1);
+  S[0] = N - I0 - R0;
+  I[0] = I0;
+  R[0] = R0;
+
+  const substepsPerDay = Math.round(1 / internalDt);
+  let state = [S[0], I[0], R[0]];
+
+  for (let day = 1; day <= T; day += 1) {
+    for (let substep = 0; substep < substepsPerDay; substep += 1) {
+      state = rk4Step(state, internalDt, beta, gamma, N);
+    }
+    [S[day], I[day], R[day]] = state;
+  }
+
+  return { S, I, R };
+}
+
+function typedArrayToArray(values) {
+  return Array.from(values);
+}
+
+function indexOfMaximum(values) {
+  let bestIndex = 0;
+  for (let i = 1; i < values.length; i += 1) {
+    if (values[i] > values[bestIndex]) bestIndex = i;
+  }
+  return bestIndex;
+}
+
+
+function summarizeEpidemic(epidemic) {
+  const peakDay = indexOfMaximum(epidemic.I);
+  const peakHeight = epidemic.I[peakDay];
+  const finalSize = DEFAULTS.N - epidemic.S[DEFAULTS.T];
+
+  return Object.freeze({
+    peakHeight,
+    peakDay,
+    finalSize,
+    rich: Object.freeze([peakHeight, peakDay, finalSize]),
+    poor: Object.freeze([finalSize])
+  });
+}
+
+function verifyFixedObservedEpidemic(epidemic) {
+  const expectedStateLength = DEFAULTS.T + 1;
+  if (epidemic.S.length !== expectedStateLength
+      || epidemic.I.length !== expectedStateLength
+      || epidemic.R.length !== expectedStateLength
+      || epidemic.newInfections.length !== DEFAULTS.T
+      || epidemic.newRecoveries.length !== DEFAULTS.T) {
+    throw new Error("Fixed observed arrays have the wrong length.");
+  }
+
+  for (let day = 0; day <= DEFAULTS.T; day += 1) {
+    if (epidemic.S[day] + epidemic.I[day] + epidemic.R[day] !== DEFAULTS.N) {
+      throw new Error(`Observed population is not conserved on day ${day}.`);
+    }
+    if (epidemic.S[day] < 0 || epidemic.I[day] < 0 || epidemic.R[day] < 0) {
+      throw new Error(`Observed curve contains a negative compartment on day ${day}.`);
+    }
+
+    if (day < DEFAULTS.T) {
+      const infections = epidemic.newInfections[day];
+      const recoveries = epidemic.newRecoveries[day];
+      if (epidemic.S[day + 1] !== epidemic.S[day] - infections
+          || epidemic.I[day + 1] !== epidemic.I[day] + infections - recoveries
+          || epidemic.R[day + 1] !== epidemic.R[day] + recoveries) {
+        throw new Error(`Observed transitions are inconsistent on day ${day}.`);
+      }
+    }
+  }
+  return true;
+}
+
+function quantile(sortedValues, probability) {
+  if (sortedValues.length === 0) return NaN;
+  const position = (sortedValues.length - 1) * probability;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  const weight = position - lower;
+  return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight;
+}
+
+function validateScenario({ beta, gamma, label, seed }, replicates = 500) {
+  const deterministic = simulateDeterministicSIR({ beta, gamma });
+  const meanS = new Float64Array(DEFAULTS.T + 1);
+  const meanI = new Float64Array(DEFAULTS.T + 1);
+  const meanR = new Float64Array(DEFAULTS.T + 1);
+  const infectedByDay = Array.from({ length: DEFAULTS.T + 1 }, () => new Float64Array(replicates));
+
+  let example = null;
+  let maxPopulationError = 0;
+  let invalidStateCount = 0;
+  let monotonicityViolationCount = 0;
+
+  const rng = mulberry32(seed);
+  for (let run = 0; run < replicates; run += 1) {
+    const simulation = simulateStochasticSIR({ beta, gamma, rng });
+    if (run === 0) example = simulation;
+
+    for (let day = 0; day <= DEFAULTS.T; day += 1) {
+      const s = simulation.S[day];
+      const i = simulation.I[day];
+      const r = simulation.R[day];
+      meanS[day] += s / replicates;
+      meanI[day] += i / replicates;
+      meanR[day] += r / replicates;
+      infectedByDay[day][run] = i;
+
+      maxPopulationError = Math.max(maxPopulationError, Math.abs(s + i + r - DEFAULTS.N));
+      if (!Number.isInteger(s) || !Number.isInteger(i) || !Number.isInteger(r)
+          || s < 0 || i < 0 || r < 0) {
+        invalidStateCount += 1;
+      }
+      if (day > 0 && (s > simulation.S[day - 1] || r < simulation.R[day - 1])) {
+        monotonicityViolationCount += 1;
+      }
+    }
+  }
+
+  const lowerI = new Float64Array(DEFAULTS.T + 1);
+  const upperI = new Float64Array(DEFAULTS.T + 1);
+  for (let day = 0; day <= DEFAULTS.T; day += 1) {
+    const sorted = Array.from(infectedByDay[day]).sort((a, b) => a - b);
+    lowerI[day] = quantile(sorted, 0.1);
+    upperI[day] = quantile(sorted, 0.9);
+  }
+
+  let squaredError = 0;
+  for (let day = 0; day <= DEFAULTS.T; day += 1) {
+    squaredError += (meanI[day] - deterministic.I[day]) ** 2;
+  }
+  const normalizedRmse = Math.sqrt(squaredError / (DEFAULTS.T + 1)) / DEFAULTS.N;
+  const stochasticPeakDay = indexOfMaximum(meanI);
+  const deterministicPeakDay = indexOfMaximum(deterministic.I);
+
+  return {
+    label,
+    beta,
+    gamma,
+    reproductionNumber: beta / gamma,
+    replicates,
+    deterministic,
+    example,
+    meanS,
+    meanI,
+    meanR,
+    lowerI,
+    upperI,
+    diagnostics: {
+      maxPopulationError,
+      invalidStateCount,
+      monotonicityViolationCount,
+      normalizedRmse,
+      stochasticPeakDay,
+      stochasticPeakHeight: meanI[stochasticPeakDay],
+      deterministicPeakDay,
+      deterministicPeakHeight: deterministic.I[deterministicPeakDay],
+      stochasticFinalSize: DEFAULTS.N - meanS[DEFAULTS.T],
+      deterministicFinalSize: DEFAULTS.N - deterministic.S[DEFAULTS.T]
+    }
+  };
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    DEFAULTS,
+    mulberry32,
+    logGamma,
+    sampleBinomial,
+    simulateStochasticSIR,
+    simulateDeterministicSIR,
+    validateScenario,
+    typedArrayToArray
+  };
+}
+const VALIDATION_SCENARIOS = Object.freeze([
+  { label: "Below threshold", beta: 0.08, gamma: 0.20, seed: 20260806 },
+  { label: "Moderate outbreak", beta: 0.25, gamma: 0.10, seed: 20261806 },
+  { label: "Ground-truth regime", beta: 0.40, gamma: 0.10, seed: 20262806 }
+]);
+const VALIDATION_REPLICATES = 500;
+
+const ABC_CONFIG = Object.freeze({
+  defaultBudget: 5000,
+  minBudget: 1000,
+  maxBudget: 20000,
+  budgetWarningThreshold: 8000,
+  defaultPercentile: 2,
+  minPercentile: 0.5,
+  maxPercentile: 15,
+  initialSeed: 314159265,
+  prior: Object.freeze({
+    betaMin: 0.05,
+    betaMax: 1.0,
+    gammaMin: 0.02,
+    gammaMax: 0.5
+  }),
+  curveCount: 8,
+  sessionSeedKey: "sir-abc-rejection-seed-v2"
+});
+
+const MCMC_CONFIG = Object.freeze({
+  burnInFraction: 0.10,
+  defaultSigmaBeta: 0.045,
+  defaultSigmaGamma: 0.018,
+  renderEvery: 150,
+  maxRawIterationMultiplier: 300,
+  seedXor: 0x9E3779B9
+});
+
+const COMPARISON_CONFIG = Object.freeze({
+  maxScatterPoints: 1800,
+  centralLowerQuantile: 0.10,
+  centralUpperQuantile: 0.90,
+  credibleIntervalLowerQuantile: 0.05,
+  credibleIntervalUpperQuantile: 0.95
+});
+
+const OBSERVED_SUMMARY = Object.freeze(summarizeEpidemic(OBSERVED_EPIDEMIC));
+
+let activeSummaryMode = "rich";
+let activePercentile = ABC_CONFIG.defaultPercentile;
+let activeBudget = ABC_CONFIG.defaultBudget;
+
+let rejectionCache = null;
+let rejectionRunToken = 0;
+let rejectionRenderFrame = null;
+let mcmcCache = null;
+let mcmcRunToken = 0;
+let comparisonCache = null;
+
+function uniformBetween(minimum, maximum, rng) {
+  return minimum + (maximum - minimum) * rng();
+}
+
+function sampleStandardNormal(rng) {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function deriveMcmcSeed(baseSeed) {
+  return ((baseSeed >>> 0) ^ MCMC_CONFIG.seedXor) >>> 0;
+}
+
+function normalizedSummaryDistance(peakHeight, peakDay, finalSize, mode) {
+  const finalDifference = (finalSize - OBSERVED_SUMMARY.finalSize) / DEFAULTS.N;
+  if (mode === "poor") return Math.abs(finalDifference);
+
+  const peakDifference = (peakHeight - OBSERVED_SUMMARY.peakHeight) / DEFAULTS.N;
+  const timingDifference = (peakDay - OBSERVED_SUMMARY.peakDay) / DEFAULTS.T;
+  return Math.sqrt(
+    peakDifference ** 2 + timingDifference ** 2 + finalDifference ** 2
+  );
+}
+
+function simulationDistance(simulation, mode) {
+  const summary = summarizeEpidemic(simulation);
+  return {
+    summary,
+    distance: normalizedSummaryDistance(
+      summary.peakHeight,
+      summary.peakDay,
+      summary.finalSize,
+      mode
+    )
+  };
+}
+
+function yieldToBrowser() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+function getSessionSeed() {
+  try {
+    const stored = Number.parseInt(sessionStorage.getItem(ABC_CONFIG.sessionSeedKey), 10);
+    if (Number.isInteger(stored) && stored >= 0) return stored >>> 0;
+    sessionStorage.setItem(ABC_CONFIG.sessionSeedKey, String(ABC_CONFIG.initialSeed));
+  } catch (error) {
+    console.warn("sessionStorage is unavailable; using the default ABC seed.", error);
+  }
+  return ABC_CONFIG.initialSeed >>> 0;
+}
+
+function createFreshSessionSeed() {
+  const values = new Uint32Array(1);
+  if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(values);
+  } else {
+    values[0] = (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
+  }
+  const seed = values[0] >>> 0;
+  try {
+    sessionStorage.setItem(ABC_CONFIG.sessionSeedKey, String(seed));
+  } catch (error) {
+    console.warn("Could not store the new ABC seed in sessionStorage.", error);
+  }
+  return seed;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Panel 1: percentile-based ABC rejection sampling                       */
+/* ---------------------------------------------------------------------- */
+
+function createRejectionCache(seed, budget) {
+  return {
+    seed: seed >>> 0,
+    budget,
+    beta: new Float64Array(budget),
+    gamma: new Float64Array(budget),
+    peakHeight: new Uint16Array(budget),
+    peakDay: new Uint8Array(budget),
+    finalSize: new Uint16Array(budget),
+    infectedCurves: new Uint16Array(budget * (DEFAULTS.T + 1)),
+    activeDistances: new Float64Array(budget),
+    distanceMode: null,
+    elapsedMs: NaN
+  };
+}
+
+function cacheSimulation(cache, index, beta, gamma, simulation) {
+  const summary = summarizeEpidemic(simulation);
+  cache.beta[index] = beta;
+  cache.gamma[index] = gamma;
+  cache.peakHeight[index] = summary.peakHeight;
+  cache.peakDay[index] = summary.peakDay;
+  cache.finalSize[index] = summary.finalSize;
+  cache.infectedCurves.set(simulation.I, index * (DEFAULTS.T + 1));
+}
+
+function computeCachedDistances(cache, mode) {
+  const distances = cache.activeDistances;
+  for (let index = 0; index < cache.budget; index += 1) {
+    distances[index] = normalizedSummaryDistance(
+      cache.peakHeight[index],
+      cache.peakDay[index],
+      cache.finalSize[index],
+      mode
+    );
+  }
+  cache.distanceMode = mode;
+  return distances;
+}
+
+function cachedInfectedCurve(cache, proposalIndex) {
+  const width = DEFAULTS.T + 1;
+  const start = proposalIndex * width;
+  return cache.infectedCurves.slice(start, start + width);
+}
+
+/** Number of proposals kept when the closest `percentile`% of `budget` are accepted. */
+function acceptedCountForPercentile(budget, percentile) {
+  return Math.min(budget, Math.max(1, Math.round((percentile / 100) * budget)));
+}
+
+/**
+ * Sorts every cached proposal by its (already computed) active distance and
+ * returns the closest `k` indices, ascending, plus the distance that defines
+ * the percentile cutoff (the "effective epsilon").
+ */
+function computeAcceptedOrder(cache, percentile) {
+  const budget = cache.budget;
+  const k = acceptedCountForPercentile(budget, percentile);
+  const order = Array.from({ length: budget }, (_, i) => i)
+    .sort((a, b) => cache.activeDistances[a] - cache.activeDistances[b]);
+  return { accepted: order.slice(0, k), epsilon: cache.activeDistances[order[k - 1]] };
+}
+
+/**
+ * Same idea as computeAcceptedOrder, but for an arbitrary (mode, percentile)
+ * pair without mutating the cache's active distance mode — used when Panel 2
+ * needs Panel 1's accepted set under settings that may differ from whatever
+ * is currently selected in Panel 1's own UI.
+ */
+function percentileAcceptedIndicesForSettings(cache, mode, percentile) {
+  const budget = cache.budget;
+  const distances = new Float64Array(budget);
+  for (let i = 0; i < budget; i += 1) {
+    distances[i] = normalizedSummaryDistance(cache.peakHeight[i], cache.peakDay[i], cache.finalSize[i], mode);
+  }
+  const k = acceptedCountForPercentile(budget, percentile);
+  const order = Array.from({ length: budget }, (_, i) => i).sort((a, b) => distances[a] - distances[b]);
+  return { indices: order.slice(0, k), epsilon: distances[order[k - 1]] };
+}
+
+/** The distance threshold implied by the current summary + percentile, for display and for Panel 2. */
+function currentEpsilon() {
+  if (!rejectionCache) return NaN;
+  if (rejectionCache.distanceMode === activeSummaryMode) {
+    return computeAcceptedOrder(rejectionCache, activePercentile).epsilon;
+  }
+  return percentileAcceptedIndicesForSettings(rejectionCache, activeSummaryMode, activePercentile).epsilon;
+}
+
+function renderRejectionScatter(cache, accepted) {
+  if (typeof Plotly === "undefined") return Promise.resolve();
+
+  const budget = cache.budget;
+  const acceptedMask = new Uint8Array(budget);
+  accepted.forEach((index) => { acceptedMask[index] = 1; });
+  const rejectedBeta = [];
+  const rejectedGamma = [];
+  const rejectedDistance = [];
+  const acceptedBeta = [];
+  const acceptedGamma = [];
+  const acceptedDistance = [];
+
+  for (let index = 0; index < budget; index += 1) {
+    const targetBeta = acceptedMask[index] ? acceptedBeta : rejectedBeta;
+    const targetGamma = acceptedMask[index] ? acceptedGamma : rejectedGamma;
+    const targetDistance = acceptedMask[index] ? acceptedDistance : rejectedDistance;
+    targetBeta.push(cache.beta[index]);
+    targetGamma.push(cache.gamma[index]);
+    targetDistance.push(cache.activeDistances[index]);
+  }
+
+  const traces = [
+    {
+      x: rejectedBeta,
+      y: rejectedGamma,
+      customdata: rejectedDistance,
+      mode: "markers",
+      marker: { color: "rgba(160, 169, 178, 0.42)", size: 6 },
+      name: `Rejected (${rejectedBeta.length.toLocaleString()})`,
+      hovertemplate: "β=%{x:.3f}<br>γ=%{y:.3f}<br>distance=%{customdata:.4f}<extra>Rejected</extra>"
+    },
+    {
+      x: acceptedBeta,
+      y: acceptedGamma,
+      customdata: acceptedDistance,
+      mode: "markers",
+      marker: { color: "#1f5b78", size: 7, opacity: 0.82 },
+      name: `Accepted (${acceptedBeta.length.toLocaleString()})`,
+      hovertemplate: "β=%{x:.3f}<br>γ=%{y:.3f}<br>distance=%{customdata:.4f}<extra>Accepted</extra>"
+    },
+    {
+      x: [OBSERVED_EPIDEMIC.metadata.beta],
+      y: [OBSERVED_EPIDEMIC.metadata.gamma],
+      mode: "markers",
+      marker: { color: "#b83a3a", size: 15, symbol: "star", line: { color: "#ffffff", width: 1 } },
+      name: "True parameter",
+      hovertemplate: "β true=%{x:.2f}<br>γ true=%{y:.2f}<extra></extra>"
+    }
+  ];
+
+  const layout = {
+    margin: { l: 62, r: 24, t: 22, b: 62 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#ffffff",
+    font: { family: "Inter, system-ui, sans-serif", color: "#16283b", size: 12 },
+    xaxis: {
+      title: { text: "Transmission rate β", standoff: 10 },
+      range: [ABC_CONFIG.prior.betaMin, ABC_CONFIG.prior.betaMax],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    yaxis: {
+      title: { text: "Recovery rate γ", standoff: 8 },
+      range: [ABC_CONFIG.prior.gammaMin, ABC_CONFIG.prior.gammaMax],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: 1.06,
+      xanchor: "left",
+      yanchor: "bottom"
+    },
+    hovermode: "closest"
+  };
+
+  return Plotly.react("abc-scatter", traces, layout, {
+    responsive: true,
+    displayModeBar: false
+  });
+}
+
+function renderAcceptedCurves(cache, accepted) {
+  if (typeof Plotly === "undefined") return Promise.resolve();
+
+  const days = Array.from({ length: DEFAULTS.T + 1 }, (_, day) => day);
+  const selected = accepted.slice(0, ABC_CONFIG.curveCount);
+  const traces = selected.map((index, order) => ({
+    x: days,
+    y: Array.from(cachedInfectedCurve(cache, index)),
+    mode: "lines",
+    line: { color: "rgba(40, 95, 143, 0.24)", width: 1.4 },
+    name: order === 0 ? "Accepted simulations" : undefined,
+    showlegend: order === 0,
+    customdata: Array(DEFAULTS.T + 1).fill(cache.activeDistances[index]),
+    hovertemplate: `β=${cache.beta[index].toFixed(3)}, γ=${cache.gamma[index].toFixed(3)}<br>Day %{x}<br>I=%{y}<br>distance=%{customdata:.4f}<extra></extra>`
+  }));
+
+  traces.push({
+    x: days,
+    y: OBSERVED_EPIDEMIC.I,
+    mode: "lines",
+    line: { color: "#16283b", width: 3.2 },
+    name: "Fixed observed I(t)",
+    hovertemplate: "Day %{x}<br>Observed I=%{y}<extra></extra>"
+  });
+
+  const annotations = [];
+  if (selected.length === 0) {
+    annotations.push({
+      x: 0.5,
+      y: 0.5,
+      xref: "paper",
+      yref: "paper",
+      text: "No cached proposal passes this percentile.",
+      showarrow: false,
+      bgcolor: "rgba(255,255,255,0.92)",
+      bordercolor: "#d8e0e7",
+      borderpad: 8
+    });
+  }
+
+  const layout = {
+    margin: { l: 62, r: 24, t: 22, b: 62 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#ffffff",
+    font: { family: "Inter, system-ui, sans-serif", color: "#16283b", size: 12 },
+    xaxis: {
+      title: { text: "Day", standoff: 10 },
+      range: [0, DEFAULTS.T],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    yaxis: {
+      title: { text: "Infected I(t)", standoff: 8 },
+      range: [0, Math.max(500, OBSERVED_SUMMARY.peakHeight * 1.15)],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: 1.06,
+      xanchor: "left",
+      yanchor: "bottom"
+    },
+    hovermode: "x unified",
+    annotations
+  };
+
+  return Plotly.react("abc-curves", traces, layout, {
+    responsive: true,
+    displayModeBar: false
+  });
+}
+
+async function renderRejectionFromCache() {
+  if (!rejectionCache) return;
+  if (rejectionCache.distanceMode !== activeSummaryMode) {
+    computeCachedDistances(rejectionCache, activeSummaryMode);
+  }
+
+  const budget = rejectionCache.budget;
+  const { accepted, epsilon } = computeAcceptedOrder(rejectionCache, activePercentile);
+  const rate = 100 * accepted.length / budget;
+
+  document.getElementById("abc-acceptance-rate").textContent = `${rate.toFixed(2)}%`;
+  document.getElementById("abc-accepted-count").textContent = `${accepted.length.toLocaleString()} accepted of ${budget.toLocaleString()}`;
+  document.getElementById("abc-epsilon-readout").textContent = Number.isFinite(epsilon) ? epsilon.toFixed(4) : "—";
+
+  await Promise.all([
+    renderRejectionScatter(rejectionCache, accepted),
+    renderAcceptedCurves(rejectionCache, accepted)
+  ]);
+
+  updateLiveTakeaway();
+}
+
+function scheduleRejectionRender() {
+  if (rejectionRenderFrame !== null) cancelAnimationFrame(rejectionRenderFrame);
+  rejectionRenderFrame = requestAnimationFrame(() => {
+    rejectionRenderFrame = null;
+    renderRejectionFromCache().catch((error) => console.error("ABC render failed", error));
+  });
+}
+
+async function runRejectionBatch(seed, budget) {
+  const runToken = ++rejectionRunToken;
+  const status = document.getElementById("abc-status");
+  const statusText = document.getElementById("abc-status-text");
+  const cache = createRejectionCache(seed, budget);
+  const rng = mulberry32(seed);
+  const chunkSize = 200;
+
+  status.classList.remove("complete");
+  statusText.textContent = `Simulating ${budget.toLocaleString()} prior proposals…`;
+  document.getElementById("abc-seed").textContent = String(seed >>> 0);
+  document.getElementById("abc-batch-time").textContent = "running";
+
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  const started = performance.now();
+
+  for (let start = 0; start < budget; start += chunkSize) {
+    const stop = Math.min(start + chunkSize, budget);
+    for (let index = start; index < stop; index += 1) {
+      const beta = uniformBetween(ABC_CONFIG.prior.betaMin, ABC_CONFIG.prior.betaMax, rng);
+      const gamma = uniformBetween(ABC_CONFIG.prior.gammaMin, ABC_CONFIG.prior.gammaMax, rng);
+      const simulation = simulateStochasticSIR({ beta, gamma, rng });
+      cacheSimulation(cache, index, beta, gamma, simulation);
+    }
+
+    if (runToken !== rejectionRunToken) return;
+    statusText.textContent = `Simulating prior proposals… ${stop.toLocaleString()} / ${budget.toLocaleString()}`;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+
+  cache.elapsedMs = performance.now() - started;
+  computeCachedDistances(cache, activeSummaryMode);
+  rejectionCache = cache;
+  await renderRejectionFromCache();
+
+  status.classList.add("complete");
+  const sizeMb = ((cache.infectedCurves.byteLength + cache.beta.byteLength + cache.gamma.byteLength) / (1024 * 1024)).toFixed(2);
+  statusText.textContent = `Cached ${budget.toLocaleString()} proposals and ${sizeMb} MB of trajectory/parameter data. Percentile and summary changes now use this cache only — no resimulation.`;
+  document.getElementById("abc-batch-time").textContent = `${cache.elapsedMs.toFixed(0)} ms to simulate`;
+  updateLiveTakeaway();
+
+  console.group("Percentile-based ABC rejection batch");
+  console.table({
+    seed: cache.seed,
+    budget,
+    summaryMode: activeSummaryMode,
+    percentile: activePercentile,
+    accepted: acceptedCountForPercentile(budget, activePercentile),
+    elapsedMs: cache.elapsedMs
+  });
+  console.groupEnd();
+}
+
+function bindRejectionControls() {
+  const percentileSlider = document.getElementById("percentile-slider");
+  const percentileValue = document.getElementById("percentile-value");
+  const percentileCountNote = document.getElementById("percentile-count-note");
+
+  const syncPercentileReadout = () => {
+    const text = `${activePercentile.toFixed(1)}%`;
+    percentileValue.textContent = text;
+    percentileCountNote.textContent = text;
+  };
+
+  percentileSlider.addEventListener("input", () => {
+    activePercentile = Number(percentileSlider.value);
+    syncPercentileReadout();
+    scheduleRejectionRender();
+    syncMcmcNextSettingsText();
+    markMcmcStale();
+  });
+  syncPercentileReadout();
+
+  document.querySelectorAll('input[name="abc-summary"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked) return;
+      activeSummaryMode = input.value;
+      if (rejectionCache) computeCachedDistances(rejectionCache, activeSummaryMode);
+      scheduleRejectionRender();
+      syncMcmcNextSettingsText();
+      markMcmcStale();
+    });
+  });
+
+  const budgetSlider = document.getElementById("budget-slider");
+  const budgetValue = document.getElementById("budget-value");
+  const budgetWarning = document.getElementById("budget-warning");
+
+  const syncBudgetReadout = () => {
+    const budget = Number(budgetSlider.value);
+    budgetValue.textContent = budget.toLocaleString();
+    budgetWarning.textContent = budget > ABC_CONFIG.budgetWarningThreshold
+      ? `Budgets above ${ABC_CONFIG.budgetWarningThreshold.toLocaleString()} take noticeably longer to simulate and rerun the chain — expect a multi-second pause after you release the slider.`
+      : "This is the shared compute budget both methods below will use. Release the slider to resimulate.";
+  };
+  budgetSlider.addEventListener("input", syncBudgetReadout);
+  budgetSlider.addEventListener("change", () => {
+    activeBudget = Number(budgetSlider.value);
+    runAllInference(getSessionSeed(), activeBudget).catch(handleInferenceError);
+  });
+  syncBudgetReadout();
+
+  document.getElementById("resimulate-abc").addEventListener("click", () => {
+    const seed = createFreshSessionSeed();
+    runAllInference(seed, activeBudget).catch(handleInferenceError);
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Panel 2: budget-matched ABC-MCMC                                       */
+/* ---------------------------------------------------------------------- */
+
+function readMcmcSettings() {
+  return {
+    summaryMode: activeSummaryMode,
+    percentile: activePercentile,
+    epsilon: currentEpsilon(),
+    budget: rejectionCache ? rejectionCache.budget : activeBudget,
+    sigmaBeta: Number(document.getElementById("sigma-beta-slider").value),
+    sigmaGamma: Number(document.getElementById("sigma-gamma-slider").value)
+  };
+}
+
+function summaryModeLabel(mode) {
+  return mode === "poor" ? "Poor: final only" : "Rich: peak, day, final";
+}
+
+function setInferenceControlsDisabled(disabled) {
+  document.getElementById("resimulate-abc").disabled = disabled;
+  document.getElementById("run-mcmc").disabled = disabled;
+  document.getElementById("budget-slider").disabled = disabled;
+}
+
+function syncMcmcNextSettingsText() {
+  const sigmaBeta = Number(document.getElementById("sigma-beta-slider").value);
+  const sigmaGamma = Number(document.getElementById("sigma-gamma-slider").value);
+  document.getElementById("sigma-beta-value").textContent = sigmaBeta.toFixed(3);
+  document.getElementById("sigma-gamma-value").textContent = sigmaGamma.toFixed(3);
+  const budget = rejectionCache ? rejectionCache.budget : activeBudget;
+  document.getElementById("mcmc-config-note").textContent =
+    `Next run: ${activeSummaryMode === "poor" ? "Poor" : "Rich"} summary, top ${activePercentile.toFixed(1)}% acceptance, budget B = ${budget.toLocaleString()}, σβ = ${sigmaBeta.toFixed(3)}, σγ = ${sigmaGamma.toFixed(3)}.`;
+}
+
+function mcmcSettingsDiffer(left, right) {
+  if (!left || !right) return true;
+  return left.summaryMode !== right.summaryMode
+    || Math.abs(left.percentile - right.percentile) > 1e-9
+    || left.budget !== right.budget
+    || Math.abs(left.sigmaBeta - right.sigmaBeta) > 1e-12
+    || Math.abs(left.sigmaGamma - right.sigmaGamma) > 1e-12;
+}
+
+function markMcmcStale() {
+  if (!mcmcCache || mcmcCache.running) return;
+  const nextSettings = readMcmcSettings();
+  const status = document.getElementById("mcmc-status");
+  const statusText = document.getElementById("mcmc-status-text");
+
+  if (!mcmcSettingsDiffer(mcmcCache.settings, nextSettings)) {
+    if (mcmcCache.stale) {
+      mcmcCache.stale = false;
+      status.classList.remove("stale", "running");
+      status.classList.add("complete");
+      statusText.textContent = mcmcCompleteMessage(mcmcCache);
+    }
+    updateComparisonStaleState();
+    updateLiveTakeaway();
+    return;
+  }
+
+  mcmcCache.stale = true;
+  status.classList.remove("complete", "running");
+  status.classList.add("stale");
+  statusText.textContent =
+    `The plotted chain remains the valid result for ${summaryModeLabel(mcmcCache.settings.summaryMode)}, top ${mcmcCache.settings.percentile.toFixed(1)}%, budget B = ${mcmcCache.settings.budget.toLocaleString()}, σβ = ${mcmcCache.settings.sigmaBeta.toFixed(3)}, σγ = ${mcmcCache.settings.sigmaGamma.toFixed(3)}. Run the chain to apply the pending controls.`;
+  updateComparisonStaleState();
+  updateLiveTakeaway();
+}
+
+function mcmcCompleteMessage(cache) {
+  const rate = cache.inBoundsSimulations > 0 ? 100 * cache.acceptedMoves / cache.inBoundsSimulations : 0;
+  const retained = cache.phase.filter((p) => p === "retained").length;
+  return `ABC-MCMC complete: budget of ${cache.settings.budget.toLocaleString()} simulator calls spent (${cache.initializationAttempts.toLocaleString()} on initialization), ${rate.toFixed(2)}% of in-bounds proposals accepted, ${retained.toLocaleString()} retained states after burn-in.`;
+}
+
+function createMcmcCache(seed, settings) {
+  const backgroundResult = rejectionCache
+    ? percentileAcceptedIndicesForSettings(rejectionCache, settings.summaryMode, settings.percentile)
+    : { indices: [] };
+
+  return {
+    seed: seed >>> 0,
+    settings: Object.freeze({ ...settings }),
+    beta: [],
+    gamma: [],
+    distance: [],
+    accepted: [],
+    phase: [],
+    inBoundsSimulations: 0,
+    outOfBoundsProposals: 0,
+    initializationAttempts: 0,
+    acceptedMoves: 0,
+    burnInBudget: 0,
+    remainingBudget: 0,
+    elapsedMs: NaN,
+    running: true,
+    stale: false,
+    backgroundAccepted: backgroundResult.indices
+  };
+}
+
+function splitPathByPhase(cache) {
+  let burnEnd = 0;
+  for (let i = 0; i < cache.phase.length; i += 1) {
+    if (cache.phase[i] === "burn-in") burnEnd = i;
+  }
+  return burnEnd;
+}
+
+async function initializeMcmcState(cache, rng, runToken, budget) {
+  const statusText = document.getElementById("mcmc-status-text");
+  let closestDistance = Infinity;
+
+  for (let attempt = 1; attempt <= budget; attempt += 1) {
+    const beta = uniformBetween(ABC_CONFIG.prior.betaMin, ABC_CONFIG.prior.betaMax, rng);
+    const gamma = uniformBetween(ABC_CONFIG.prior.gammaMin, ABC_CONFIG.prior.gammaMax, rng);
+    const simulation = simulateStochasticSIR({ beta, gamma, rng });
+    const evaluated = simulationDistance(simulation, cache.settings.summaryMode);
+    cache.initializationAttempts = attempt;
+    closestDistance = Math.min(closestDistance, evaluated.distance);
+
+    if (evaluated.distance < cache.settings.epsilon) {
+      return { beta, gamma, distance: evaluated.distance };
+    }
+
+    if (attempt % 100 === 0) {
+      if (runToken !== mcmcRunToken) return null;
+      statusText.textContent = `Searching the prior for a valid initial state… ${attempt.toLocaleString()} / ${budget.toLocaleString()} of the budget spent; closest distance ${closestDistance.toFixed(4)}.`;
+      document.getElementById("mcmc-init-attempts").textContent = attempt.toLocaleString();
+      await yieldToBrowser();
+    }
+  }
+
+  throw new Error(
+    `No initial state passed ε = ${cache.settings.epsilon.toFixed(4)} within the ${budget.toLocaleString()}-simulation budget. Raise the acceptance percentile or the budget, then rerun.`
+  );
+}
+
+function postBurnInSummary(cache) {
+  const betaVals = [];
+  const gammaVals = [];
+  const distVals = [];
+  for (let i = 0; i < cache.phase.length; i += 1) {
+    if (cache.phase[i] === "retained") {
+      betaVals.push(cache.beta[i]);
+      gammaVals.push(cache.gamma[i]);
+      distVals.push(cache.distance[i]);
+    }
+  }
+  const count = betaVals.length;
+  if (count === 0) return null;
+  const sum = (values) => values.reduce((a, b) => a + b, 0);
+  return {
+    count,
+    meanBeta: sum(betaVals) / count,
+    meanGamma: sum(gammaVals) / count,
+    meanDistance: sum(distVals) / count,
+    betaVals,
+    gammaVals,
+    distVals
+  };
+}
+
+function updateMcmcMetrics(cache) {
+  const inBounds = cache.inBoundsSimulations;
+  const rate = inBounds > 0 ? 100 * cache.acceptedMoves / inBounds : 0;
+  const retained = cache.phase.filter((p) => p === "retained").length;
+  const summary = postBurnInSummary(cache);
+
+  document.getElementById("mcmc-acceptance-rate").textContent = inBounds > 0 ? `${rate.toFixed(2)}%` : "—";
+  document.getElementById("mcmc-accepted-moves").textContent = inBounds > 0
+    ? `${cache.acceptedMoves.toLocaleString()} accepted of ${inBounds.toLocaleString()} in-bounds`
+    : "initial state only";
+  document.getElementById("mcmc-retained").textContent = retained.toLocaleString();
+  document.getElementById("mcmc-init-attempts").textContent = cache.initializationAttempts.toLocaleString();
+  document.getElementById("mcmc-seed").textContent = String(cache.seed);
+
+  if (summary) {
+    document.getElementById("mcmc-posterior-mean").textContent =
+      `β = ${summary.meanBeta.toFixed(3)} · γ = ${summary.meanGamma.toFixed(3)}`;
+    document.getElementById("mcmc-posterior-distance").textContent =
+      `${summary.count.toLocaleString()} retained states · mean distance ${summary.meanDistance.toFixed(4)}`;
+  } else {
+    document.getElementById("mcmc-posterior-mean").textContent = "β = — · γ = —";
+    document.getElementById("mcmc-posterior-distance").textContent =
+      `${retained.toLocaleString()} retained states available so far`;
+  }
+}
+
+function renderMcmcPath(cache) {
+  if (typeof Plotly === "undefined") return Promise.resolve();
+
+  const burnEnd = splitPathByPhase(cache);
+  const upto = cache.beta.length - 1;
+  const backgroundBeta = cache.backgroundAccepted.map((index) => rejectionCache.beta[index]);
+  const backgroundGamma = cache.backgroundAccepted.map((index) => rejectionCache.gamma[index]);
+
+  const burnBeta = cache.beta.slice(0, burnEnd + 1);
+  const burnGamma = cache.gamma.slice(0, burnEnd + 1);
+  const burnCustom = burnBeta.map((_, i) => [i, cache.distance[i]]);
+
+  const postBeta = upto > burnEnd ? cache.beta.slice(burnEnd, upto + 1) : [];
+  const postGamma = upto > burnEnd ? cache.gamma.slice(burnEnd, upto + 1) : [];
+  const postCustom = postBeta.map((_, i) => [burnEnd + i, cache.distance[burnEnd + i]]);
+
+  const traces = [
+    {
+      x: backgroundBeta,
+      y: backgroundGamma,
+      mode: "markers",
+      marker: { color: "rgba(40, 95, 143, 0.16)", size: 6 },
+      name: `Panel 1 accepted (${backgroundBeta.length.toLocaleString()})`,
+      hovertemplate: "β=%{x:.3f}<br>γ=%{y:.3f}<extra>Rejection sample</extra>"
+    },
+    {
+      x: burnBeta,
+      y: burnGamma,
+      customdata: burnCustom,
+      mode: "lines+markers",
+      line: { color: "#9a6a1c", width: 1.6 },
+      marker: { color: "#9a6a1c", size: 3.5, opacity: 0.66 },
+      name: "Burn-in path",
+      hovertemplate: "Iteration %{customdata[0]}<br>β=%{x:.3f}<br>γ=%{y:.3f}<br>distance=%{customdata[1]:.4f}<extra>Burn-in</extra>"
+    },
+    {
+      x: postBeta,
+      y: postGamma,
+      customdata: postCustom,
+      mode: "lines+markers",
+      line: { color: "#1f5b78", width: 1.45 },
+      marker: { color: "#1f5b78", size: 3.2, opacity: 0.54 },
+      name: "Post-burn-in path",
+      hovertemplate: "Iteration %{customdata[0]}<br>β=%{x:.3f}<br>γ=%{y:.3f}<br>distance=%{customdata[1]:.4f}<extra>Retained chain</extra>"
+    },
+    {
+      x: [cache.beta[0]],
+      y: [cache.gamma[0]],
+      mode: "markers",
+      marker: { color: "#16283b", size: 10, symbol: "circle-open", line: { width: 2 } },
+      name: "Initial state",
+      hovertemplate: "Initial β=%{x:.3f}<br>Initial γ=%{y:.3f}<extra></extra>"
+    },
+    {
+      x: [cache.beta[upto]],
+      y: [cache.gamma[upto]],
+      mode: "markers",
+      marker: { color: "#247158", size: 11, symbol: "diamond", line: { color: "#ffffff", width: 1 } },
+      name: "Current state",
+      hovertemplate: `Iteration ${upto}<br>β=%{x:.3f}<br>γ=%{y:.3f}<extra></extra>`
+    },
+    {
+      x: [OBSERVED_EPIDEMIC.metadata.beta],
+      y: [OBSERVED_EPIDEMIC.metadata.gamma],
+      mode: "markers",
+      marker: { color: "#b83a3a", size: 16, symbol: "star", line: { color: "#ffffff", width: 1 } },
+      name: "True parameter",
+      hovertemplate: "β true=%{x:.2f}<br>γ true=%{y:.2f}<extra></extra>"
+    }
+  ];
+
+  const layout = {
+    margin: { l: 66, r: 24, t: 24, b: 66 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#ffffff",
+    font: { family: "Inter, system-ui, sans-serif", color: "#16283b", size: 12 },
+    xaxis: {
+      title: { text: "Transmission rate β", standoff: 10 },
+      range: [ABC_CONFIG.prior.betaMin, ABC_CONFIG.prior.betaMax],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    yaxis: {
+      title: { text: "Recovery rate γ", standoff: 8 },
+      range: [ABC_CONFIG.prior.gammaMin, ABC_CONFIG.prior.gammaMax],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: 1.04,
+      xanchor: "left",
+      yanchor: "bottom"
+    },
+    hovermode: "closest",
+    uirevision: `${cache.seed}-${cache.settings.summaryMode}-${cache.settings.percentile}`
+  };
+
+  return Plotly.react("mcmc-path", traces, layout, {
+    responsive: true,
+    displayModeBar: false
+  });
+}
+
+function renderMcmcTraces(cache) {
+  if (typeof Plotly === "undefined") return Promise.resolve();
+
+  const upto = cache.beta.length - 1;
+  const iterations = Array.from({ length: upto + 1 }, (_, index) => index);
+  const burnEnd = splitPathByPhase(cache);
+  const xMax = Math.max(upto, 1);
+
+  const traces = [
+    {
+      x: iterations,
+      y: cache.beta,
+      mode: "lines",
+      line: { color: "#1f5b78", width: 1.25 },
+      name: "β chain",
+      xaxis: "x",
+      yaxis: "y",
+      hovertemplate: "Iteration %{x}<br>β=%{y:.4f}<extra></extra>"
+    },
+    {
+      x: [0, xMax],
+      y: [OBSERVED_EPIDEMIC.metadata.beta, OBSERVED_EPIDEMIC.metadata.beta],
+      mode: "lines",
+      line: { color: "#b83a3a", width: 1.5, dash: "dash" },
+      name: "β true",
+      xaxis: "x",
+      yaxis: "y",
+      hoverinfo: "skip"
+    },
+    {
+      x: iterations,
+      y: cache.gamma,
+      mode: "lines",
+      line: { color: "#247158", width: 1.25 },
+      name: "γ chain",
+      xaxis: "x2",
+      yaxis: "y2",
+      hovertemplate: "Iteration %{x}<br>γ=%{y:.4f}<extra></extra>"
+    },
+    {
+      x: [0, xMax],
+      y: [OBSERVED_EPIDEMIC.metadata.gamma, OBSERVED_EPIDEMIC.metadata.gamma],
+      mode: "lines",
+      line: { color: "#b83a3a", width: 1.5, dash: "dash" },
+      name: "γ true",
+      xaxis: "x2",
+      yaxis: "y2",
+      hoverinfo: "skip"
+    }
+  ];
+
+  const shapes = [
+    {
+      type: "rect", xref: "x", yref: "y domain",
+      x0: 0, x1: burnEnd, y0: 0, y1: 1,
+      fillcolor: "rgba(154, 106, 28, 0.10)", line: { width: 0 }, layer: "below"
+    },
+    {
+      type: "rect", xref: "x2", yref: "y2 domain",
+      x0: 0, x1: burnEnd, y0: 0, y1: 1,
+      fillcolor: "rgba(154, 106, 28, 0.10)", line: { width: 0 }, layer: "below"
+    },
+    {
+      type: "line", xref: "x", yref: "y domain",
+      x0: burnEnd, x1: burnEnd, y0: 0, y1: 1,
+      line: { color: "#9a6a1c", width: 1, dash: "dot" }
+    },
+    {
+      type: "line", xref: "x2", yref: "y2 domain",
+      x0: burnEnd, x1: burnEnd, y0: 0, y1: 1,
+      line: { color: "#9a6a1c", width: 1, dash: "dot" }
+    }
+  ];
+
+  const layout = {
+    margin: { l: 70, r: 24, t: 38, b: 60 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#ffffff",
+    font: { family: "Inter, system-ui, sans-serif", color: "#16283b", size: 12 },
+    xaxis: {
+      domain: [0, 1], anchor: "y", range: [0, xMax],
+      showticklabels: false, gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    yaxis: {
+      domain: [0.56, 1], anchor: "x", title: { text: "β", standoff: 8 },
+      range: [ABC_CONFIG.prior.betaMin, ABC_CONFIG.prior.betaMax],
+      gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    xaxis2: {
+      domain: [0, 1], anchor: "y2", range: [0, xMax],
+      title: { text: "Iteration (in-bounds simulations)", standoff: 10 },
+      gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    yaxis2: {
+      domain: [0, 0.42], anchor: "x2", title: { text: "γ", standoff: 8 },
+      range: [ABC_CONFIG.prior.gammaMin, ABC_CONFIG.prior.gammaMax],
+      gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    legend: {
+      orientation: "h", x: 0, y: 1.08, xanchor: "left", yanchor: "bottom"
+    },
+    hovermode: "closest",
+    shapes,
+    annotations: [{
+      x: Math.min(burnEnd / 2, Math.max(1, upto / 2)),
+      y: 1.015,
+      xref: "x",
+      yref: "paper",
+      text: "burn-in",
+      showarrow: false,
+      font: { color: "#8a5a18", size: 11 }
+    }],
+    uirevision: `${cache.seed}-${cache.settings.summaryMode}-${cache.settings.percentile}`
+  };
+
+  return Plotly.react("mcmc-traces", traces, layout, {
+    responsive: true,
+    displayModeBar: false
+  });
+}
+
+function renderMcmc(cache) {
+  updateMcmcMetrics(cache);
+  return Promise.all([renderMcmcPath(cache), renderMcmcTraces(cache)]);
+}
+
+async function runMcmcChain(seed) {
+  const runToken = ++mcmcRunToken;
+  const settings = readMcmcSettings();
+
+  if (!rejectionCache || !Number.isFinite(settings.epsilon)) {
+    throw new Error("Run the rejection batch first so ABC-MCMC has a matched tolerance to target.");
+  }
+
+  const cache = createMcmcCache(seed, settings);
+  const rng = mulberry32(seed);
+  const status = document.getElementById("mcmc-status");
+  const statusText = document.getElementById("mcmc-status-text");
+  const budget = settings.budget;
+
+  mcmcCache = cache;
+  resetComparisonPanel(`Waiting for the budget-matched chain (B = ${budget.toLocaleString()}) to finish before comparing methods...`);
+  setInferenceControlsDisabled(true);
+  status.classList.remove("complete", "stale");
+  status.classList.add("running");
+  statusText.textContent = `Initializing ABC-MCMC from a prior draw with distance below ε = ${settings.epsilon.toFixed(4)}…`;
+  document.getElementById("mcmc-summary-setting").textContent = summaryModeLabel(settings.summaryMode);
+  document.getElementById("mcmc-epsilon-setting").textContent = settings.epsilon.toFixed(4);
+  document.getElementById("mcmc-budget-setting").textContent = budget.toLocaleString();
+  document.getElementById("mcmc-burnin-setting").textContent = "computed after initialization";
+  document.getElementById("mcmc-seed").textContent = String(seed >>> 0);
+  document.getElementById("mcmc-runtime").textContent = "running";
+  document.getElementById("mcmc-acceptance-rate").textContent = "—";
+  document.getElementById("mcmc-accepted-moves").textContent = "finding a valid initial state";
+  document.getElementById("mcmc-retained").textContent = "0";
+  document.getElementById("mcmc-init-attempts").textContent = "0";
+  document.getElementById("mcmc-posterior-mean").textContent = "β = — · γ = —";
+  document.getElementById("mcmc-posterior-distance").textContent = "available after burn-in";
+
+  await yieldToBrowser();
+  const started = performance.now();
+
+  try {
+    const initial = await initializeMcmcState(cache, rng, runToken, budget);
+    if (!initial || runToken !== mcmcRunToken) return;
+
+    cache.beta.push(initial.beta);
+    cache.gamma.push(initial.gamma);
+    cache.distance.push(initial.distance);
+    cache.accepted.push(0);
+    cache.phase.push("burn-in");
+
+    const remainingBudget = Math.max(0, budget - cache.initializationAttempts);
+    cache.remainingBudget = remainingBudget;
+    cache.burnInBudget = Math.max(1, Math.round(remainingBudget * MCMC_CONFIG.burnInFraction));
+    document.getElementById("mcmc-burnin-setting").textContent =
+      `first ${cache.burnInBudget.toLocaleString()} of ${remainingBudget.toLocaleString()} remaining simulations`;
+
+    await renderMcmc(cache);
+
+    if (remainingBudget <= 0) {
+      throw new Error("Initialization alone consumed the entire budget. Raise the budget or the acceptance percentile, then rerun.");
+    }
+
+    let currentBeta = initial.beta;
+    let currentGamma = initial.gamma;
+    let currentDistance = initial.distance;
+    let rawIterations = 0;
+    const rawIterationCap = remainingBudget * MCMC_CONFIG.maxRawIterationMultiplier;
+
+    while (cache.inBoundsSimulations < remainingBudget) {
+      rawIterations += 1;
+      if (rawIterations > rawIterationCap) {
+        throw new Error("The random walk proposed an unusually long run of out-of-bounds moves. Try smaller proposal scales, then rerun.");
+      }
+
+      const proposedBeta = currentBeta + settings.sigmaBeta * sampleStandardNormal(rng);
+      const proposedGamma = currentGamma + settings.sigmaGamma * sampleStandardNormal(rng);
+      const inBounds = proposedBeta >= ABC_CONFIG.prior.betaMin
+        && proposedBeta <= ABC_CONFIG.prior.betaMax
+        && proposedGamma >= ABC_CONFIG.prior.gammaMin
+        && proposedGamma <= ABC_CONFIG.prior.gammaMax;
+
+      if (!inBounds) {
+        cache.outOfBoundsProposals += 1;
+        continue;
+      }
+
+      cache.inBoundsSimulations += 1;
+      const simulation = simulateStochasticSIR({ beta: proposedBeta, gamma: proposedGamma, rng });
+      const evaluated = simulationDistance(simulation, settings.summaryMode);
+
+      let accepted = 0;
+      // Uniform priors and a symmetric untruncated random-walk proposal make
+      // the Metropolis-Hastings ratio one inside the prior support.
+      if (evaluated.distance < settings.epsilon) {
+        currentBeta = proposedBeta;
+        currentGamma = proposedGamma;
+        currentDistance = evaluated.distance;
+        accepted = 1;
+        cache.acceptedMoves += 1;
+      }
+
+      // A rejected proposal copies the previous state exactly.
+      cache.beta.push(currentBeta);
+      cache.gamma.push(currentGamma);
+      cache.distance.push(currentDistance);
+      cache.accepted.push(accepted);
+      cache.phase.push(cache.inBoundsSimulations <= cache.burnInBudget ? "burn-in" : "retained");
+
+      if (cache.inBoundsSimulations % MCMC_CONFIG.renderEvery === 0 || cache.inBoundsSimulations === remainingBudget) {
+        if (runToken !== mcmcRunToken) return;
+        const rate = 100 * cache.acceptedMoves / cache.inBoundsSimulations;
+        statusText.textContent = `ABC-MCMC running… ${cache.inBoundsSimulations.toLocaleString()} / ${remainingBudget.toLocaleString()} in-bounds simulations (${cache.outOfBoundsProposals.toLocaleString()} free out-of-bounds moves skipped); ${rate.toFixed(2)}% accepted.`;
+        await renderMcmc(cache);
+        await yieldToBrowser();
+      }
+    }
+
+    cache.elapsedMs = performance.now() - started;
+    cache.running = false;
+    cache.stale = false;
+    status.classList.remove("running", "stale");
+    status.classList.add("complete");
+    statusText.textContent = mcmcCompleteMessage(cache);
+    document.getElementById("mcmc-runtime").textContent = `${cache.elapsedMs.toFixed(0)} ms total`;
+    await renderMcmc(cache);
+    await renderComparisonPanel(cache);
+    updateLiveTakeaway();
+
+    console.group("ABC-MCMC chain");
+    console.table({
+      seed: cache.seed,
+      summaryMode: settings.summaryMode,
+      percentile: settings.percentile,
+      epsilon: settings.epsilon,
+      budget,
+      sigmaBeta: settings.sigmaBeta,
+      sigmaGamma: settings.sigmaGamma,
+      initializationAttempts: cache.initializationAttempts,
+      inBoundsSimulations: cache.inBoundsSimulations,
+      outOfBoundsProposals: cache.outOfBoundsProposals,
+      acceptedMoves: cache.acceptedMoves,
+      rejectionBackgroundPoints: cache.backgroundAccepted.length,
+      elapsedMs: cache.elapsedMs,
+      ...postBurnInSummary(cache)
+    });
+    console.groupEnd();
+  } finally {
+    if (runToken === mcmcRunToken) {
+      cache.running = false;
+      setInferenceControlsDisabled(false);
+    }
+  }
+}
+
+async function runAllInference(seed, budget = activeBudget) {
+  activeBudget = budget;
+  setInferenceControlsDisabled(true);
+  try {
+    mcmcRunToken += 1;
+    await runRejectionBatch(seed, budget);
+    await runMcmcChain(deriveMcmcSeed(seed));
+  } finally {
+    setInferenceControlsDisabled(false);
+  }
+}
+
+function handleInferenceError(error) {
+  console.error(error);
+  setInferenceControlsDisabled(false);
+  const mcmcStatus = document.getElementById("mcmc-status");
+  mcmcStatus.classList.remove("complete", "running");
+  mcmcStatus.classList.add("stale");
+  document.getElementById("mcmc-status-text").textContent = `Inference run failed: ${error.message}`;
+  if (!rejectionCache) {
+    document.getElementById("abc-status-text").textContent = `ABC batch failed: ${error.message}`;
+  }
+  const comparisonStatus = document.getElementById("comparison-status");
+  comparisonStatus.classList.remove("complete", "running");
+  comparisonStatus.classList.add("stale");
+  document.getElementById("comparison-status-text").textContent = `Comparison unavailable because inference failed: ${error.message}`;
+}
+
+function bindMcmcControls() {
+  const sigmaBeta = document.getElementById("sigma-beta-slider");
+  const sigmaGamma = document.getElementById("sigma-gamma-slider");
+
+  [sigmaBeta, sigmaGamma].forEach((slider) => {
+    slider.addEventListener("input", () => {
+      syncMcmcNextSettingsText();
+      markMcmcStale();
+    });
+  });
+
+  document.getElementById("run-mcmc").addEventListener("click", () => {
+    runMcmcChain(deriveMcmcSeed(getSessionSeed())).catch(handleInferenceError);
+  });
+
+  syncMcmcNextSettingsText();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Merged budget-matched comparison (lives inside the ABC-MCMC panel)     */
+/* ---------------------------------------------------------------------- */
+
+function comparisonQuantile(values, probability) {
+  if (!values.length) return NaN;
+  const sorted = Array.from(values).sort((left, right) => left - right);
+  const position = (sorted.length - 1) * probability;
+  const lower = Math.floor(position);
+  const upper = Math.min(sorted.length - 1, lower + 1);
+  const fraction = position - lower;
+  return sorted[lower] * (1 - fraction) + sorted[upper] * fraction;
+}
+
+function parameterSampleSummary(betaValues, gammaValues) {
+  const count = betaValues.length;
+  if (!count || gammaValues.length !== count) return null;
+
+  let betaTotal = 0;
+  let gammaTotal = 0;
+  const normalizedErrors = new Float64Array(count);
+  const betaWidth = ABC_CONFIG.prior.betaMax - ABC_CONFIG.prior.betaMin;
+  const gammaWidth = ABC_CONFIG.prior.gammaMax - ABC_CONFIG.prior.gammaMin;
+
+  for (let index = 0; index < count; index += 1) {
+    betaTotal += betaValues[index];
+    gammaTotal += gammaValues[index];
+    normalizedErrors[index] = Math.hypot(
+      (betaValues[index] - OBSERVED_EPIDEMIC.metadata.beta) / betaWidth,
+      (gammaValues[index] - OBSERVED_EPIDEMIC.metadata.gamma) / gammaWidth
+    );
+  }
+
+  const meanBeta = betaTotal / count;
+  const meanGamma = gammaTotal / count;
+  const betaLow = comparisonQuantile(betaValues, COMPARISON_CONFIG.centralLowerQuantile);
+  const betaHigh = comparisonQuantile(betaValues, COMPARISON_CONFIG.centralUpperQuantile);
+  const gammaLow = comparisonQuantile(gammaValues, COMPARISON_CONFIG.centralLowerQuantile);
+  const gammaHigh = comparisonQuantile(gammaValues, COMPARISON_CONFIG.centralUpperQuantile);
+  const betaCredibleIntervalLow = comparisonQuantile(betaValues, COMPARISON_CONFIG.credibleIntervalLowerQuantile);
+  const betaCredibleIntervalHigh = comparisonQuantile(betaValues, COMPARISON_CONFIG.credibleIntervalUpperQuantile);
+  const gammaCredibleIntervalLow = comparisonQuantile(gammaValues, COMPARISON_CONFIG.credibleIntervalLowerQuantile);
+  const gammaCredibleIntervalHigh = comparisonQuantile(gammaValues, COMPARISON_CONFIG.credibleIntervalUpperQuantile);
+  const betaCredibleIntervalWidth = Math.max(0, betaCredibleIntervalHigh - betaCredibleIntervalLow);
+  const gammaCredibleIntervalWidth = Math.max(0, gammaCredibleIntervalHigh - gammaCredibleIntervalLow);
+  const centralArea = Math.max(0, betaHigh - betaLow) * Math.max(0, gammaHigh - gammaLow);
+  const priorArea = betaWidth * gammaWidth;
+
+  return {
+    count,
+    meanBeta,
+    meanGamma,
+    betaLow,
+    betaHigh,
+    gammaLow,
+    gammaHigh,
+    betaCredibleIntervalLow,
+    betaCredibleIntervalHigh,
+    gammaCredibleIntervalLow,
+    gammaCredibleIntervalHigh,
+    betaCredibleIntervalWidth,
+    gammaCredibleIntervalWidth,
+    betaCredibleIntervalWidthFraction: betaCredibleIntervalWidth / betaWidth,
+    gammaCredibleIntervalWidthFraction: gammaCredibleIntervalWidth / gammaWidth,
+    centralArea,
+    centralAreaFraction: centralArea / priorArea,
+    posteriorMeanError: Math.hypot(
+      (meanBeta - OBSERVED_EPIDEMIC.metadata.beta) / betaWidth,
+      (meanGamma - OBSERVED_EPIDEMIC.metadata.gamma) / gammaWidth
+    ),
+    medianPointError: comparisonQuantile(normalizedErrors, 0.5)
+  };
+}
+
+function reproductionNumberSampleSummary(betaValues, gammaValues) {
+  const count = betaValues.length;
+  if (!count || gammaValues.length !== count) return null;
+
+  const r0Values = new Float64Array(count);
+  let r0Total = 0;
+  const minimumValidGamma = Math.max(Number.EPSILON, ABC_CONFIG.prior.gammaMin);
+
+  for (let index = 0; index < count; index += 1) {
+    const beta = betaValues[index];
+    const gamma = gammaValues[index];
+
+    if (!Number.isFinite(beta) || !Number.isFinite(gamma) || gamma < minimumValidGamma) return null;
+
+    const r0 = beta / gamma;
+    if (!Number.isFinite(r0)) return null;
+    r0Values[index] = r0;
+    r0Total += r0;
+  }
+
+  const credibleIntervalLow = comparisonQuantile(r0Values, COMPARISON_CONFIG.credibleIntervalLowerQuantile);
+  const credibleIntervalHigh = comparisonQuantile(r0Values, COMPARISON_CONFIG.credibleIntervalUpperQuantile);
+  const credibleIntervalWidth = Math.max(0, credibleIntervalHigh - credibleIntervalLow);
+  const priorLow = ABC_CONFIG.prior.betaMin / ABC_CONFIG.prior.gammaMax;
+  const priorHigh = ABC_CONFIG.prior.betaMax / ABC_CONFIG.prior.gammaMin;
+  const priorWidth = priorHigh - priorLow;
+
+  return {
+    count,
+    r0Values,
+    meanR0: r0Total / count,
+    medianR0: comparisonQuantile(r0Values, 0.5),
+    credibleIntervalLow,
+    credibleIntervalHigh,
+    credibleIntervalWidth,
+    credibleIntervalWidthFraction: credibleIntervalWidth / priorWidth,
+    priorLow,
+    priorHigh,
+    trueR0: OBSERVED_EPIDEMIC.metadata.beta / OBSERVED_EPIDEMIC.metadata.gamma
+  };
+}
+
+function buildComparisonData(cache) {
+  if (!rejectionCache || !cache || cache.running) return null;
+
+  const budget = cache.settings.budget;
+  const { indices: acceptedIndices } = percentileAcceptedIndicesForSettings(
+    rejectionCache, cache.settings.summaryMode, cache.settings.percentile
+  );
+  const rejectionBeta = acceptedIndices.map((index) => rejectionCache.beta[index]);
+  const rejectionGamma = acceptedIndices.map((index) => rejectionCache.gamma[index]);
+  const rejectionDistance = acceptedIndices.map((index) => normalizedSummaryDistance(
+    rejectionCache.peakHeight[index],
+    rejectionCache.peakDay[index],
+    rejectionCache.finalSize[index],
+    cache.settings.summaryMode
+  ));
+
+  const retainedSummary = postBurnInSummary(cache);
+  const mcmcBeta = retainedSummary ? retainedSummary.betaVals : [];
+  const mcmcGamma = retainedSummary ? retainedSummary.gammaVals : [];
+  const mcmcDistance = retainedSummary ? retainedSummary.distVals : [];
+  const mcmcIterations = [];
+  for (let i = 0; i < cache.phase.length; i += 1) {
+    if (cache.phase[i] === "retained") mcmcIterations.push(i);
+  }
+
+  const rejectionSimulatorCalls = budget;
+  const mcmcSimulatorCalls = cache.initializationAttempts + cache.inBoundsSimulations;
+  const rejectionR0Summary = reproductionNumberSampleSummary(rejectionBeta, rejectionGamma);
+  const mcmcR0Summary = reproductionNumberSampleSummary(mcmcBeta, mcmcGamma);
+
+  return {
+    settings: cache.settings,
+    acceptedIndices,
+    rejectionBeta,
+    rejectionGamma,
+    rejectionDistance,
+    rejectionR0: rejectionR0Summary ? rejectionR0Summary.r0Values : new Float64Array(0),
+    mcmcBeta,
+    mcmcGamma,
+    mcmcDistance,
+    mcmcIterations,
+    mcmcR0: mcmcR0Summary ? mcmcR0Summary.r0Values : new Float64Array(0),
+    rejectionSummary: parameterSampleSummary(rejectionBeta, rejectionGamma),
+    mcmcSummary: parameterSampleSummary(mcmcBeta, mcmcGamma),
+    rejectionR0Summary,
+    mcmcR0Summary,
+    trueR0: OBSERVED_EPIDEMIC.metadata.beta / OBSERVED_EPIDEMIC.metadata.gamma,
+    rejectionSimulatorCalls,
+    mcmcSimulatorCalls,
+    budget,
+    rejectionYieldPerThousand: 1000 * acceptedIndices.length / rejectionSimulatorCalls,
+    mcmcYieldPerThousand: mcmcSimulatorCalls > 0 ? 1000 * mcmcBeta.length / mcmcSimulatorCalls : NaN,
+    acceptedMoves: cache.acceptedMoves,
+    retainedStates: mcmcBeta.length,
+    initializationAttempts: cache.initializationAttempts,
+    outOfBoundsProposals: cache.outOfBoundsProposals
+  };
+}
+
+function evenlySpacedIndices(length, maximum) {
+  if (length <= 0) return [];
+  if (length <= maximum) return Array.from({ length }, (_, index) => index);
+  const indices = [];
+  const step = (length - 1) / (maximum - 1);
+  for (let index = 0; index < maximum; index += 1) {
+    indices.push(Math.round(index * step));
+  }
+  return indices;
+}
+
+function resetComparisonPanel(message) {
+  comparisonCache = null;
+  const status = document.getElementById("comparison-status");
+  status.classList.remove("complete", "stale");
+  status.classList.add("running");
+  document.getElementById("comparison-status-text").textContent = message;
+  document.getElementById("comparison-settings-badge").textContent = "Waiting for completed chain";
+  document.getElementById("comparison-matched-settings").textContent = "—";
+  document.getElementById("comparison-proposal-settings").textContent = "same summary and tolerance";
+  document.getElementById("comparison-rejection-yield").textContent = "—";
+  document.getElementById("comparison-rejection-rate").textContent = "ABC-compatible draws";
+  document.getElementById("comparison-mcmc-yield").textContent = "—";
+  document.getElementById("comparison-mcmc-rate").textContent = "retained post-burn-in states";
+  document.getElementById("comparison-budget").textContent = "—";
+  document.getElementById("comparison-footprint").textContent = "—";
+  document.getElementById("comparison-rejection-r0").textContent = "—";
+  document.getElementById("comparison-rejection-r0-credible-interval").textContent = "median · 90% credible interval";
+  document.getElementById("comparison-mcmc-r0").textContent = "—";
+  document.getElementById("comparison-mcmc-r0-credible-interval").textContent = "median · 90% credible interval";
+  document.getElementById("comparison-efficiency-copy").textContent = "The comparison will appear after both methods finish.";
+  document.getElementById("comparison-target-copy").textContent = "";
+  document.getElementById("comparison-tuning-copy").textContent = "";
+  document.getElementById("summary-callout").classList.remove("poor");
+  document.getElementById("summary-callout-title").textContent = "Summary-statistic effect";
+  document.getElementById("summary-callout-copy").textContent = "The rich and poor summaries will be interpreted using the completed chain's settings.";
+  document.getElementById("r0-callout").classList.remove("poor");
+  document.getElementById("r0-callout-title").textContent = "R0 identification";
+  document.getElementById("r0-callout-copy").textContent = "R0 credible intervals will appear after both methods finish.";
+  if (typeof Plotly !== "undefined") Plotly.purge("comparison-plot");
+}
+
+function updateComparisonStaleState() {
+  if (!comparisonCache || !mcmcCache || mcmcCache.running) return;
+  const status = document.getElementById("comparison-status");
+  const statusText = document.getElementById("comparison-status-text");
+  const differs = mcmcSettingsDiffer(mcmcCache.settings, readMcmcSettings());
+
+  if (differs) {
+    status.classList.remove("complete", "running");
+    status.classList.add("stale");
+    statusText.textContent =
+      `The comparison remains valid for ${summaryModeLabel(mcmcCache.settings.summaryMode)}, top ${mcmcCache.settings.percentile.toFixed(1)}%, budget B = ${mcmcCache.settings.budget.toLocaleString()}, σβ = ${mcmcCache.settings.sigmaBeta.toFixed(3)}, σγ = ${mcmcCache.settings.sigmaGamma.toFixed(3)}. Rerun the chain to apply the pending controls.`;
+  } else {
+    status.classList.remove("stale", "running");
+    status.classList.add("complete");
+    statusText.textContent =
+      `Budget-matched comparison complete for ${summaryModeLabel(mcmcCache.settings.summaryMode)} at top ${mcmcCache.settings.percentile.toFixed(1)}%, B = ${mcmcCache.settings.budget.toLocaleString()}.`;
+  }
+}
+
+function updateComparisonText(data, cache) {
+  const summaryLabel = data.settings.summaryMode === "poor" ? "Poor" : "Rich";
+  const rejectionCount = data.acceptedIndices.length;
+  const yieldRatio = data.rejectionYieldPerThousand > 0
+    ? data.mcmcYieldPerThousand / data.rejectionYieldPerThousand
+    : Infinity;
+  const ratioText = Number.isFinite(yieldRatio)
+    ? `${yieldRatio.toFixed(1)}× the posterior-sample yield per simulator call`
+    : "a posterior-sample yield that cannot be ratioed because rejection accepted no proposals";
+
+  document.getElementById("comparison-matched-settings").textContent =
+    `${summaryLabel} · top ${data.settings.percentile.toFixed(1)}%`;
+  document.getElementById("comparison-proposal-settings").textContent =
+    `σβ ${data.settings.sigmaBeta.toFixed(3)} · σγ ${data.settings.sigmaGamma.toFixed(3)} · ε ${data.settings.epsilon.toFixed(4)}`;
+  document.getElementById("comparison-rejection-yield").textContent = rejectionCount.toLocaleString();
+  document.getElementById("comparison-rejection-rate").textContent =
+    `${data.rejectionYieldPerThousand.toFixed(1)} accepted per 1,000 simulator calls`;
+  document.getElementById("comparison-mcmc-yield").textContent = data.retainedStates.toLocaleString();
+  document.getElementById("comparison-mcmc-rate").textContent =
+    `${data.mcmcYieldPerThousand.toFixed(1)} retained per 1,000 simulator calls · ${data.acceptedMoves.toLocaleString()} accepted moves overall`;
+  document.getElementById("comparison-budget").textContent =
+    `${data.rejectionSimulatorCalls.toLocaleString()} · ${data.mcmcSimulatorCalls.toLocaleString()}`;
+
+  const rejectionFootprint = data.rejectionSummary ? 100 * data.rejectionSummary.centralAreaFraction : NaN;
+  const mcmcFootprint = data.mcmcSummary ? 100 * data.mcmcSummary.centralAreaFraction : NaN;
+  document.getElementById("comparison-footprint").textContent =
+    `${Number.isFinite(rejectionFootprint) ? rejectionFootprint.toFixed(1) + "%" : "n/a"} · ${Number.isFinite(mcmcFootprint) ? mcmcFootprint.toFixed(1) + "%" : "n/a"}`;
+
+  const formatR0 = (value) => Number.isFinite(value) ? value.toFixed(2) : "n/a";
+  const updateR0Metric = (method, summary) => {
+    const valueElement = document.getElementById(`comparison-${method}-r0`);
+    const credibleIntervalElement = document.getElementById(`comparison-${method}-r0-credible-interval`);
+    if (!summary) {
+      valueElement.textContent = "n/a";
+      credibleIntervalElement.textContent = "no finite R0 samples";
+      return;
+    }
+    valueElement.textContent = `median ${formatR0(summary.medianR0)}`;
+    credibleIntervalElement.textContent =
+      `90% credible interval [${formatR0(summary.credibleIntervalLow)}, ${formatR0(summary.credibleIntervalHigh)}] · mean ${formatR0(summary.meanR0)}`;
+  };
+  updateR0Metric("rejection", data.rejectionR0Summary);
+  updateR0Metric("mcmc", data.mcmcR0Summary);
+
+  document.getElementById("comparison-efficiency-copy").textContent =
+    `Both methods spent the same ${data.budget.toLocaleString()}-simulation budget targeting the ${summaryLabel.toLowerCase()} summary at the top ${data.settings.percentile.toFixed(1)}% (ε = ${data.settings.epsilon.toFixed(4)}). Rejection returned ${rejectionCount.toLocaleString()} accepted draws (${data.rejectionYieldPerThousand.toFixed(1)} per 1,000 calls). ABC-MCMC returned ${data.retainedStates.toLocaleString()} retained post-burn-in states (${data.mcmcYieldPerThousand.toFixed(1)} per 1,000 calls) — ${ratioText}. Once the chain finds the compatible region it keeps proposing nearby instead of blindly resampling the whole prior.`;
+  document.getElementById("comparison-target-copy").textContent =
+    `Both samples approximate the same tolerance-defined posterior, so a well-mixed chain should reproduce the rejection target rather than make it artificially narrower. The ${data.retainedStates.toLocaleString()} retained MCMC states are dependent and include exact repeats after rejected proposals — that's expected, not a flaw.`;
+  document.getElementById("comparison-tuning-copy").textContent =
+    `That yield advantage depends on tuning. With σβ = ${data.settings.sigmaBeta.toFixed(3)} and σγ = ${data.settings.sigmaGamma.toFixed(3)}, the chain discarded its first ${(cache.burnInBudget || 0).toLocaleString()} in-bounds simulations as burn-in. Steps too small create a sticky, highly autocorrelated chain; steps too large cause poor-fit or out-of-bounds rejections and shrink the yield advantage.`;
+
+  const callout = document.getElementById("summary-callout");
+  if (data.settings.summaryMode === "poor") {
+    callout.classList.add("poor");
+    document.getElementById("summary-callout-title").textContent = "Poor summary active: non-identifiability is visible";
+    document.getElementById("summary-callout-copy").textContent =
+      `Final epidemic size alone cannot distinguish fast-and-sharp outbreaks from slow-and-long outbreaks that infect similar totals. Both methods therefore admit a wider, ridge-like range of β and γ values, even though the yield comparison above still favors MCMC.`;
+  } else {
+    callout.classList.remove("poor");
+    document.getElementById("summary-callout-title").textContent = "What changes under the poor summary";
+    document.getElementById("summary-callout-copy").textContent =
+      `Peak height and peak timing currently help distinguish fast-and-sharp from slow-and-long epidemics. Select Poor: final only and rerun the chain; both clouds should widen into a ridge because one final total cannot separately identify transmission and recovery rates.`;
+  }
+
+  const r0CalloutTitle = document.getElementById("r0-callout-title");
+  const r0CalloutCopy = document.getElementById("r0-callout-copy");
+  const credibleIntervalWidthDescription = (label, parameterSummary, r0Summary) => {
+    if (!parameterSummary || !r0Summary) return `${label}: no finite R0 credible interval is available.`;
+    const r0Percent = 100 * r0Summary.credibleIntervalWidthFraction;
+    const betaPercent = 100 * parameterSummary.betaCredibleIntervalWidthFraction;
+    const gammaPercent = 100 * parameterSummary.gammaCredibleIntervalWidthFraction;
+    return `${label}: R0 [${formatR0(r0Summary.credibleIntervalLow)}, ${formatR0(r0Summary.credibleIntervalHigh)}] has width ${formatR0(r0Summary.credibleIntervalWidth)} (${r0Percent.toFixed(1)}% of the derived R0 prior support [${formatR0(r0Summary.priorLow)}, ${formatR0(r0Summary.priorHigh)}]), versus β and γ 90% credible interval widths of ${betaPercent.toFixed(1)}% and ${gammaPercent.toFixed(1)}% of their prior ranges`;
+  };
+  const rejectionWidthDescription = credibleIntervalWidthDescription("Rejection", data.rejectionSummary, data.rejectionR0Summary);
+  const mcmcWidthDescription = credibleIntervalWidthDescription("ABC-MCMC", data.mcmcSummary, data.mcmcR0Summary);
+
+  const r0Callout = document.getElementById("r0-callout");
+  const r0TighterForBoth = [
+    [data.rejectionSummary, data.rejectionR0Summary],
+    [data.mcmcSummary, data.mcmcR0Summary]
+  ].every(([parameterSummary, r0Summary]) =>
+    parameterSummary
+    && r0Summary
+    && r0Summary.credibleIntervalWidthFraction < parameterSummary.betaCredibleIntervalWidthFraction
+    && r0Summary.credibleIntervalWidthFraction < parameterSummary.gammaCredibleIntervalWidthFraction
+  );
+
+  if (data.settings.summaryMode === "rich") {
+    r0Callout.classList.remove("poor");
+    r0CalloutTitle.textContent = r0TighterForBoth
+      ? "R0 is identified along the β-γ ridge"
+      : "R0 credible intervals along the β-γ ridge";
+    r0CalloutCopy.textContent =
+      `The true value is R0 = ${data.trueR0.toFixed(1)}. ${rejectionWidthDescription}; ${mcmcWidthDescription}. ${r0TighterForBoth ? "The smaller range-normalized R0 credible intervals make the ridge interpretation explicit: β and γ can trade off while their ratio remains constrained." : "At these settings R0 is not narrower than both marginal rate intervals for both methods, so the reported widths should be interpreted directly rather than as automatic evidence of tighter identification."} The support-width percentages are descriptive: independent uniform priors on β and γ induce a non-uniform prior on R0.`;
+  } else {
+    r0Callout.classList.add("poor");
+    r0CalloutTitle.textContent = "R0 identification under the poor summary";
+    r0CalloutCopy.textContent =
+      `The true value is R0 = ${data.trueR0.toFixed(1)}. ${rejectionWidthDescription}; ${mcmcWidthDescription}. Final epidemic size alone is intentionally lossy, so compare these widths with the rich-summary run before treating R0 as well identified. The support-width percentages are descriptive because the induced prior on R0 is not uniform.`;
+  }
+
+  document.getElementById("comparison-settings-badge").textContent =
+    `${summaryLabel} · top ${data.settings.percentile.toFixed(1)}% · B = ${data.budget.toLocaleString()}`;
+}
+
+function renderComparisonPlot(data, cache) {
+  if (typeof Plotly === "undefined") return Promise.resolve();
+
+  const rejectionDisplay = evenlySpacedIndices(data.rejectionBeta.length, COMPARISON_CONFIG.maxScatterPoints);
+  const mcmcDisplay = evenlySpacedIndices(data.mcmcBeta.length, COMPARISON_CONFIG.maxScatterPoints);
+  const rejectionMean = data.rejectionSummary;
+  const mcmcMean = data.mcmcSummary;
+
+  const traces = [
+    {
+      x: rejectionDisplay.map((index) => data.rejectionBeta[index]),
+      y: rejectionDisplay.map((index) => data.rejectionGamma[index]),
+      customdata: rejectionDisplay.map((index) => [data.rejectionDistance[index], data.rejectionR0[index]]),
+      mode: "markers",
+      marker: { color: "#1f5b78", size: 7, opacity: 0.62 },
+      name: `Rejection accepted (${data.rejectionBeta.length.toLocaleString()})`,
+      legendgroup: "rejection",
+      hovertemplate: "β=%{x:.3f}<br>γ=%{y:.3f}<br>R0=%{customdata[1]:.3f}<br>distance=%{customdata[0]:.4f}<extra>Rejection</extra>"
+    },
+    {
+      x: mcmcDisplay.map((index) => data.mcmcBeta[index]),
+      y: mcmcDisplay.map((index) => data.mcmcGamma[index]),
+      customdata: mcmcDisplay.map((index) => [data.mcmcIterations[index], data.mcmcDistance[index], data.mcmcR0[index]]),
+      mode: "markers",
+      marker: { color: "#247158", size: 6, opacity: 0.30, symbol: "diamond" },
+      name: `MCMC retained (${data.mcmcBeta.length.toLocaleString()})`,
+      legendgroup: "mcmc",
+      hovertemplate: "Iteration %{customdata[0]}<br>β=%{x:.3f}<br>γ=%{y:.3f}<br>R0=%{customdata[2]:.3f}<br>distance=%{customdata[1]:.4f}<extra>ABC-MCMC</extra>"
+    },
+    {
+      x: rejectionMean ? [rejectionMean.meanBeta] : [],
+      y: rejectionMean ? [rejectionMean.meanGamma] : [],
+      mode: "markers",
+      marker: { color: "#1f5b78", size: 13, symbol: "circle-open", line: { width: 2.5 } },
+      showlegend: false,
+      hovertemplate: "Rejection mean<br>β=%{x:.3f}<br>γ=%{y:.3f}<extra></extra>"
+    },
+    {
+      x: mcmcMean ? [mcmcMean.meanBeta] : [],
+      y: mcmcMean ? [mcmcMean.meanGamma] : [],
+      mode: "markers",
+      marker: { color: "#247158", size: 13, symbol: "diamond-open", line: { width: 2.5 } },
+      showlegend: false,
+      hovertemplate: "MCMC mean<br>β=%{x:.3f}<br>γ=%{y:.3f}<extra></extra>"
+    },
+    {
+      x: [OBSERVED_EPIDEMIC.metadata.beta],
+      y: [OBSERVED_EPIDEMIC.metadata.gamma],
+      mode: "markers",
+      marker: { color: "#b83a3a", size: 17, symbol: "star", line: { color: "#ffffff", width: 1 } },
+      name: "True parameter",
+      hovertemplate: "β true=%{x:.2f}<br>γ true=%{y:.2f}<br>R0 true=4.0<extra></extra>"
+    },
+    {
+      x: data.rejectionBeta,
+      type: "histogram",
+      histnorm: "probability density",
+      nbinsx: 30,
+      opacity: 0.50,
+      marker: { color: "#1f5b78" },
+      name: "Rejection β marginal",
+      legendgroup: "rejection",
+      showlegend: false,
+      xaxis: "x2",
+      yaxis: "y2",
+      hovertemplate: "β bin=%{x:.3f}<br>density=%{y:.3f}<extra>Rejection</extra>"
+    },
+    {
+      x: data.mcmcBeta,
+      type: "histogram",
+      histnorm: "probability density",
+      nbinsx: 30,
+      opacity: 0.45,
+      marker: { color: "#247158" },
+      name: "MCMC β marginal",
+      legendgroup: "mcmc",
+      showlegend: false,
+      xaxis: "x2",
+      yaxis: "y2",
+      hovertemplate: "β bin=%{x:.3f}<br>density=%{y:.3f}<extra>ABC-MCMC</extra>"
+    },
+    {
+      x: data.rejectionGamma,
+      type: "histogram",
+      histnorm: "probability density",
+      nbinsx: 30,
+      opacity: 0.50,
+      marker: { color: "#1f5b78" },
+      name: "Rejection γ marginal",
+      legendgroup: "rejection",
+      showlegend: false,
+      xaxis: "x3",
+      yaxis: "y3",
+      hovertemplate: "γ bin=%{x:.3f}<br>density=%{y:.3f}<extra>Rejection</extra>"
+    },
+    {
+      x: data.mcmcGamma,
+      type: "histogram",
+      histnorm: "probability density",
+      nbinsx: 30,
+      opacity: 0.45,
+      marker: { color: "#247158" },
+      name: "MCMC γ marginal",
+      legendgroup: "mcmc",
+      showlegend: false,
+      xaxis: "x3",
+      yaxis: "y3",
+      hovertemplate: "γ bin=%{x:.3f}<br>density=%{y:.3f}<extra>ABC-MCMC</extra>"
+    }
+  ];
+
+  const layout = {
+    margin: { l: 68, r: 34, t: 72, b: 66 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#ffffff",
+    font: { family: "Inter, system-ui, sans-serif", color: "#16283b", size: 12 },
+    barmode: "overlay",
+    bargap: 0.04,
+    xaxis: {
+      domain: [0, 0.58], anchor: "y",
+      title: { text: "Transmission rate β", standoff: 10 },
+      range: [ABC_CONFIG.prior.betaMin, ABC_CONFIG.prior.betaMax],
+      gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    yaxis: {
+      domain: [0, 1], anchor: "x",
+      title: { text: "Recovery rate γ", standoff: 8 },
+      range: [ABC_CONFIG.prior.gammaMin, ABC_CONFIG.prior.gammaMax],
+      gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    xaxis2: {
+      domain: [0.69, 1], anchor: "y2",
+      title: { text: "β", standoff: 7 },
+      range: [ABC_CONFIG.prior.betaMin, ABC_CONFIG.prior.betaMax],
+      gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    yaxis2: {
+      domain: [0.58, 1], anchor: "x2",
+      title: { text: "Density", standoff: 7 },
+      rangemode: "tozero", gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    xaxis3: {
+      domain: [0.69, 1], anchor: "y3",
+      title: { text: "γ", standoff: 7 },
+      range: [ABC_CONFIG.prior.gammaMin, ABC_CONFIG.prior.gammaMax],
+      gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    yaxis3: {
+      domain: [0, 0.40], anchor: "x3",
+      title: { text: "Density", standoff: 7 },
+      rangemode: "tozero", gridcolor: "#e8edf1", zeroline: false, fixedrange: true
+    },
+    legend: {
+      orientation: "h", x: 0, y: 1.12, xanchor: "left", yanchor: "bottom"
+    },
+    hovermode: "closest",
+    shapes: [
+      {
+        type: "line", xref: "x2", yref: "y2 domain",
+        x0: OBSERVED_EPIDEMIC.metadata.beta, x1: OBSERVED_EPIDEMIC.metadata.beta,
+        y0: 0, y1: 1,
+        line: { color: "#b83a3a", width: 2, dash: "dash" }
+      },
+      {
+        type: "line", xref: "x3", yref: "y3 domain",
+        x0: OBSERVED_EPIDEMIC.metadata.gamma, x1: OBSERVED_EPIDEMIC.metadata.gamma,
+        y0: 0, y1: 1,
+        line: { color: "#b83a3a", width: 2, dash: "dash" }
+      }
+    ],
+    annotations: [
+      { x: 0.29, y: 1.045, xref: "paper", yref: "paper", text: "Joint parameter sample", showarrow: false, font: { size: 13, color: "#667584" } },
+      { x: 0.845, y: 1.045, xref: "paper", yref: "paper", text: "β marginal", showarrow: false, font: { size: 13, color: "#667584" } },
+      { x: 0.845, y: 0.445, xref: "paper", yref: "paper", text: "γ marginal", showarrow: false, font: { size: 13, color: "#667584" } }
+    ],
+    uirevision: `${cache.seed}-${data.settings.summaryMode}-${data.settings.percentile}-comparison`
+  };
+
+  return Plotly.react("comparison-plot", traces, layout, {
+    responsive: true,
+    displayModeBar: false
+  });
+}
+
+async function renderComparisonPanel(cache) {
+  const data = buildComparisonData(cache);
+  if (!data) return;
+  comparisonCache = data;
+  updateComparisonText(data, cache);
+  await renderComparisonPlot(data, cache);
+
+  const status = document.getElementById("comparison-status");
+  status.classList.remove("running", "stale");
+  status.classList.add("complete");
+  document.getElementById("comparison-status-text").textContent =
+    `Budget-matched comparison complete for ${summaryModeLabel(data.settings.summaryMode)} at top ${data.settings.percentile.toFixed(1)}%, B = ${data.budget.toLocaleString()}: ${data.acceptedIndices.length.toLocaleString()} rejection draws versus ${data.retainedStates.toLocaleString()} post-burn-in MCMC states.`;
+
+  console.group("Budget-matched ABC method comparison");
+  console.table({
+    summaryMode: data.settings.summaryMode,
+    percentile: data.settings.percentile,
+    budget: data.budget,
+    rejectionAccepted: data.acceptedIndices.length,
+    rejectionYieldPerThousand: data.rejectionYieldPerThousand,
+    mcmcSimulatorCalls: data.mcmcSimulatorCalls,
+    mcmcRetainedStates: data.retainedStates,
+    mcmcYieldPerThousand: data.mcmcYieldPerThousand,
+    rejectionCentralAreaPercent: data.rejectionSummary ? 100 * data.rejectionSummary.centralAreaFraction : NaN,
+    mcmcCentralAreaPercent: data.mcmcSummary ? 100 * data.mcmcSummary.centralAreaFraction : NaN,
+    trueR0: data.trueR0,
+    rejectionMedianR0: data.rejectionR0Summary ? data.rejectionR0Summary.medianR0 : NaN,
+    mcmcMedianR0: data.mcmcR0Summary ? data.mcmcR0Summary.medianR0 : NaN
+  });
+  console.groupEnd();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Live takeaway banner                                                   */
+/* ---------------------------------------------------------------------- */
+
+function updateLiveTakeaway() {
+  const el = document.getElementById("live-takeaway-text");
+  if (!el) return;
+
+  if (!rejectionCache) {
+    el.textContent = "Run the inference below to see how closely ABC recovers the true parameters, and how much more efficient ABC-MCMC is than rejection sampling at the same simulation budget.";
+    return;
+  }
+
+  const budget = rejectionCache.budget;
+  const k = acceptedCountForPercentile(budget, activePercentile);
+  const summaryLabel = activeSummaryMode === "poor" ? "poor (final size only)" : "rich (peak height, timing, final size)";
+
+  let text = `With the ${summaryLabel} summary and the closest ${activePercentile.toFixed(1)}% of ${budget.toLocaleString()} proposals kept (${k.toLocaleString()} accepted draws), rejection ABC concentrates around R0 ≈ 4 while spreading more widely across individual β and γ values.`;
+
+  if (comparisonCache && mcmcCache && !mcmcCache.stale && !mcmcCache.running) {
+    const ratio = comparisonCache.rejectionYieldPerThousand > 0
+      ? comparisonCache.mcmcYieldPerThousand / comparisonCache.rejectionYieldPerThousand
+      : null;
+    text += ` At the identical ${comparisonCache.budget.toLocaleString()}-simulation budget, ABC-MCMC returned ${comparisonCache.retainedStates.toLocaleString()} retained states versus rejection's ${comparisonCache.acceptedIndices.length.toLocaleString()} accepted draws${ratio ? ` — about ${ratio.toFixed(1)}× the yield per simulator call.` : "."}`;
+  } else if (mcmcCache && mcmcCache.running) {
+    text += " ABC-MCMC is running now — its efficiency comparison will appear once the chain finishes.";
+  } else if (mcmcCache && mcmcCache.stale) {
+    text += " ABC-MCMC's last run is now stale relative to these controls — rerun the chain to refresh the efficiency comparison.";
+  }
+
+  el.textContent = text;
+}
+
+function showExecutedCode() {
+  document.getElementById("stochastic-code").textContent = [
+    mulberry32,
+    logGamma,
+    sampleBinomial,
+    simulateStochasticSIR
+  ].map((fn) => fn.toString()).join("\n\n");
+
+  document.getElementById("deterministic-code").textContent = [
+    sirDerivative,
+    rk4Step,
+    simulateDeterministicSIR
+  ].map((fn) => fn.toString()).join("\n\n");
+
+  document.getElementById("validation-code").textContent = [
+    indexOfMaximum,
+    quantile,
+    validateScenario
+  ].map((fn) => fn.toString()).join("\n\n");
+
+  document.getElementById("observed-code").textContent = [
+    "const OBSERVED_EPIDEMIC = " + JSON.stringify(OBSERVED_EPIDEMIC, null, 2) + ";",
+    summarizeEpidemic.toString(),
+    verifyFixedObservedEpidemic.toString()
+  ].join("\n\n");
+
+  document.getElementById("rejection-code").textContent = [
+    "const ABC_CONFIG = " + JSON.stringify(ABC_CONFIG, null, 2) + ";",
+    uniformBetween,
+    createRejectionCache,
+    cacheSimulation,
+    computeCachedDistances,
+    acceptedCountForPercentile,
+    computeAcceptedOrder,
+    percentileAcceptedIndicesForSettings,
+    cachedInfectedCurve,
+    runRejectionBatch,
+    renderRejectionFromCache
+  ].map((item) => typeof item === "function" ? item.toString() : item).join("\n\n");
+
+  document.getElementById("mcmc-code").textContent = [
+    "const MCMC_CONFIG = " + JSON.stringify(MCMC_CONFIG, null, 2) + ";",
+    sampleStandardNormal,
+    normalizedSummaryDistance,
+    simulationDistance,
+    initializeMcmcState,
+    runMcmcChain,
+    renderMcmcPath,
+    renderMcmcTraces
+  ].map((item) => typeof item === "function" ? item.toString() : item).join("\n\n");
+
+  document.getElementById("comparison-code").textContent = [
+    "const COMPARISON_CONFIG = " + JSON.stringify(COMPARISON_CONFIG, null, 2) + ";",
+    comparisonQuantile,
+    parameterSampleSummary,
+    reproductionNumberSampleSummary,
+    buildComparisonData,
+    evenlySpacedIndices,
+    updateComparisonText,
+    renderComparisonPlot,
+    renderComparisonPanel
+  ].map((item) => typeof item === "function" ? item.toString() : item).join("\n\n");
+}
+
+function formatNumber(value, digits = 1) {
+  return Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  });
+}
+
+function buildScenarioCards() {
+  const grid = document.getElementById("scenario-grid");
+  grid.replaceChildren();
+
+  VALIDATION_SCENARIOS.forEach((scenario, index) => {
+    const card = document.createElement("article");
+    card.className = "scenario-card";
+    card.innerHTML = `
+      <div class="scenario-meta">
+        <h3>${scenario.label}</h3>
+        <span class="parameters">β=${scenario.beta.toFixed(2)}, γ=${scenario.gamma.toFixed(2)}, R₀=${(scenario.beta / scenario.gamma).toFixed(1)}</span>
+      </div>
+      <div id="chart-${index}" class="chart" aria-label="${scenario.label} infected trajectory comparison"></div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function renderDiagnostics(results) {
+  const body = document.getElementById("diagnostics-body");
+  body.replaceChildren();
+
+  results.forEach((result) => {
+    const d = result.diagnostics;
+    const structuralPass = d.maxPopulationError === 0
+      && d.invalidStateCount === 0
+      && d.monotonicityViolationCount === 0;
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><strong>${result.label}</strong><br><span class="parameters">β=${result.beta.toFixed(2)}, γ=${result.gamma.toFixed(2)}</span></td>
+      <td>${result.reproductionNumber.toFixed(1)}</td>
+      <td><span class="pass">${structuralPass ? "PASS" : "CHECK"}</span><br><span class="parameters">ΔN max=${d.maxPopulationError}; invalid=${d.invalidStateCount}; monotonicity=${d.monotonicityViolationCount}</span></td>
+      <td>${(100 * d.normalizedRmse).toFixed(3)}% of N</td>
+      <td>${formatNumber(d.stochasticPeakHeight)} / ${formatNumber(d.deterministicPeakHeight)}</td>
+      <td>${d.stochasticPeakDay} / ${d.deterministicPeakDay}</td>
+      <td>${formatNumber(d.stochasticFinalSize)} / ${formatNumber(d.deterministicFinalSize)}</td>
+    `;
+    body.appendChild(row);
+  });
+}
+
+function renderPlot(result, index) {
+  const days = Array.from({ length: DEFAULTS.T + 1 }, (_, day) => day);
+  const traces = [
+    {
+      x: days,
+      y: typedArrayToArray(result.lowerI),
+      mode: "lines",
+      line: { width: 0 },
+      hoverinfo: "skip",
+      showlegend: false
+    },
+    {
+      x: days,
+      y: typedArrayToArray(result.upperI),
+      mode: "lines",
+      line: { width: 0 },
+      fill: "tonexty",
+      fillcolor: "rgba(40, 95, 143, 0.14)",
+      name: "Stochastic 10–90%",
+      hovertemplate: "Day %{x}<br>90th percentile: %{y:.1f}<extra></extra>"
+    },
+    {
+      x: days,
+      y: typedArrayToArray(result.example.I),
+      mode: "lines",
+      line: { color: "rgba(153, 104, 35, 0.65)", width: 1.25 },
+      name: "One stochastic run",
+      hovertemplate: "Day %{x}<br>Example I: %{y}<extra></extra>"
+    },
+    {
+      x: days,
+      y: typedArrayToArray(result.meanI),
+      mode: "lines",
+      line: { color: "#1f5b78", width: 3 },
+      name: "Stochastic mean",
+      hovertemplate: "Day %{x}<br>Mean I: %{y:.1f}<extra></extra>"
+    },
+    {
+      x: days,
+      y: typedArrayToArray(result.deterministic.I),
+      mode: "lines",
+      line: { color: "#16283b", width: 2.2, dash: "dash" },
+      name: "Deterministic ODE",
+      hovertemplate: "Day %{x}<br>ODE I: %{y:.1f}<extra></extra>"
+    }
+  ];
+
+  const layout = {
+    margin: { l: 58, r: 18, t: 18, b: 58 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#ffffff",
+    font: { family: "Inter, system-ui, sans-serif", color: "#16283b", size: 12 },
+    xaxis: {
+      title: { text: "Day", standoff: 10 },
+      range: [0, DEFAULTS.T],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    yaxis: {
+      title: { text: "Infected I(t)", standoff: 8 },
+      rangemode: "tozero",
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: 1.13,
+      xanchor: "left",
+      yanchor: "bottom",
+      font: { size: 10 }
+    },
+    hovermode: "x unified"
+  };
+
+  return Plotly.newPlot(`chart-${index}`, traces, layout, {
+    responsive: true,
+    displayModeBar: false
+  });
+}
+
+function renderObservedEpidemic() {
+  verifyFixedObservedEpidemic(OBSERVED_EPIDEMIC);
+  const summary = summarizeEpidemic(OBSERVED_EPIDEMIC);
+  const days = Array.from({ length: DEFAULTS.T + 1 }, (_, day) => day);
+
+  document.getElementById("observed-peak-height").textContent = summary.peakHeight.toLocaleString();
+  document.getElementById("observed-peak-day").textContent = `day ${summary.peakDay}`;
+  document.getElementById("observed-final-size").textContent = summary.finalSize.toLocaleString();
+  document.getElementById("rich-vector").textContent = `[${summary.rich.join(", ")}]`;
+  document.getElementById("poor-vector").textContent = `[${summary.poor.join(", ")}]`;
+  document.getElementById("observed-seed").textContent = OBSERVED_EPIDEMIC.metadata.seed.toLocaleString();
+
+  if (typeof Plotly === "undefined") return Promise.resolve();
+
+  const traces = [
+    {
+      x: days,
+      y: OBSERVED_EPIDEMIC.S,
+      mode: "lines",
+      line: { color: "#6b7782", width: 2 },
+      name: "Susceptible S(t)",
+      hovertemplate: "Day %{x}<br>S: %{y}<extra></extra>"
+    },
+    {
+      x: days,
+      y: OBSERVED_EPIDEMIC.I,
+      mode: "lines",
+      line: { color: "#1f5b78", width: 3.2 },
+      name: "Observed infected I(t)",
+      hovertemplate: "Day %{x}<br>I: %{y}<extra></extra>"
+    },
+    {
+      x: days,
+      y: OBSERVED_EPIDEMIC.R,
+      mode: "lines",
+      line: { color: "#247158", width: 2 },
+      name: "Recovered R(t)",
+      hovertemplate: "Day %{x}<br>R: %{y}<extra></extra>"
+    },
+    {
+      x: [summary.peakDay],
+      y: [summary.peakHeight],
+      mode: "markers+text",
+      marker: { color: "#b83a3a", size: 11, symbol: "star" },
+      text: [`peak: ${summary.peakHeight} on day ${summary.peakDay}`],
+      textposition: "top right",
+      textfont: { color: "#7e2525", size: 12 },
+      name: "Peak used in summary",
+      hovertemplate: "Peak I: %{y}<br>Day %{x}<extra></extra>"
+    }
+  ];
+
+  const layout = {
+    margin: { l: 62, r: 28, t: 30, b: 60 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "#ffffff",
+    font: { family: "Inter, system-ui, sans-serif", color: "#16283b", size: 12 },
+    xaxis: {
+      title: { text: "Day", standoff: 10 },
+      range: [0, DEFAULTS.T],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    yaxis: {
+      title: { text: "People", standoff: 8 },
+      range: [0, DEFAULTS.N],
+      gridcolor: "#e8edf1",
+      zeroline: false,
+      fixedrange: true
+    },
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: 1.08,
+      xanchor: "left",
+      yanchor: "bottom"
+    },
+    hovermode: "x unified",
+    annotations: [{
+      x: DEFAULTS.T,
+      y: OBSERVED_EPIDEMIC.R[DEFAULTS.T],
+      xanchor: "right",
+      yanchor: "bottom",
+      text: `final size = ${summary.finalSize}`,
+      showarrow: true,
+      arrowhead: 2,
+      ax: -55,
+      ay: -38,
+      bgcolor: "rgba(255,255,255,0.9)",
+      bordercolor: "#d8e0e7",
+      borderpad: 5
+    }]
+  };
+
+  return Plotly.newPlot("observed-chart", traces, layout, {
+    responsive: true,
+    displayModeBar: false
+  });
+}
+
+async function runValidation() {
+  const status = document.getElementById("status");
+  const statusText = document.getElementById("status-text");
+  const rerunButton = document.getElementById("rerun");
+
+  status.classList.remove("complete");
+  statusText.textContent = `Running ${VALIDATION_SCENARIOS.length * VALIDATION_REPLICATES.toLocaleString()} stochastic simulations…`;
+  rerunButton.disabled = true;
+  buildScenarioCards();
+
+  await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 20)));
+  const started = performance.now();
+  const results = VALIDATION_SCENARIOS.map((scenario) => validateScenario(scenario, VALIDATION_REPLICATES));
+  renderDiagnostics(results);
+
+  if (typeof Plotly === "undefined") {
+    statusText.textContent = "Numerical validation completed, but Plotly.js did not load. Check the network connection used for the CDN.";
+    rerunButton.disabled = false;
+    return;
+  }
+
+  await Promise.all(results.map(renderPlot));
+  const elapsed = performance.now() - started;
+  status.classList.add("complete");
+  statusText.textContent = `Validation complete: ${results.length * VALIDATION_REPLICATES.toLocaleString()} simulations in ${elapsed.toFixed(0)} ms. All structural checks passed.`;
+  rerunButton.disabled = false;
+
+  console.group("Stochastic SIR validation");
+  console.table(results.map((result) => ({
+    regime: result.label,
+    beta: result.beta,
+    gamma: result.gamma,
+    R0: result.reproductionNumber,
+    maxPopulationError: result.diagnostics.maxPopulationError,
+    invalidStates: result.diagnostics.invalidStateCount,
+    monotonicityViolations: result.diagnostics.monotonicityViolationCount,
+    infectedNRMSEPercentOfN: 100 * result.diagnostics.normalizedRmse,
+    meanPeakDay: result.diagnostics.stochasticPeakDay,
+    odePeakDay: result.diagnostics.deterministicPeakDay,
+    meanFinalSize: result.diagnostics.stochasticFinalSize,
+    odeFinalSize: result.diagnostics.deterministicFinalSize
+  })));
+  console.groupEnd();
+}
+
+showExecutedCode();
+bindRejectionControls();
+bindMcmcControls();
+renderObservedEpidemic().catch((error) => console.error("Observed-data rendering failed", error));
+
+const appendixDetails = document.getElementById("appendix");
+document.getElementById("rerun").addEventListener("click", runValidation);
+appendixDetails.addEventListener("toggle", () => {
+  if (appendixDetails.open && appendixDetails.dataset.loaded !== "true") {
+    appendixDetails.dataset.loaded = "true";
+    runValidation().catch((error) => {
+      console.error(error);
+      document.getElementById("status-text").textContent = `Validation failed: ${error.message}`;
+      document.getElementById("rerun").disabled = false;
+    });
+  }
+});
+
+runAllInference(getSessionSeed(), activeBudget).catch(handleInferenceError);
+  </script>
+</body>
+</html>
